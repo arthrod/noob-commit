@@ -26,7 +26,7 @@ fn test_version_command() {
 
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("Noob Commit"));
-    assert!(stdout.contains("0.4.1"));
+    assert!(stdout.contains("0.5.0"));
 }
 
 #[test]

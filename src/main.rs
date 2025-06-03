@@ -11,8 +11,9 @@ use clap::Parser;
 use clap_verbosity_flag::{InfoLevel, Verbosity};
 use log::{error, info};
 use question::{Answer, Question};
-use rand::seq::SliceRandom;
-use schemars::gen::{SchemaGenerator, SchemaSettings};
+use rand::prelude::*;
+use schemars::SchemaGenerator;
+use schemars::generate::SchemaSettings;
 use spinners::{Spinner, Spinners};
 use noob_commit::Commit;
 use std::{
@@ -520,18 +521,20 @@ async fn main() -> Result<(), ()> {
             Spinners::Triangle,
         ];
 
-        let spinner = vs.choose(&mut rand::thread_rng()).unwrap().clone();
+        let mut rng = rand::rng();
+        let spinner = vs.choose(&mut rng).unwrap().clone();
 
         Some(Spinner::new(spinner, "Analyzing Codebase...".into()))
     } else {
         None
     };
 
-    let mut generator = SchemaGenerator::new(SchemaSettings::openapi3().with(|settings| {
-        settings.inline_subschemas = true;
-    }));
+    let settings = SchemaSettings::openapi3().with(|s| {
+        s.inline_subschemas = true;
+    });
+    let mut generator = SchemaGenerator::new(settings);
 
-    let commit_schema = generator.subschema_for::<Commit>().into_object();
+    let commit_schema = generator.subschema_for::<Commit>();
 
     let completion = client
         .chat()
