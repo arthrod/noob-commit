@@ -128,7 +128,7 @@ jobs:
 
   macos:
     name: Build for Mac
-    runs-on: macos-11
+    runs-on: macos-14
     needs: [version_bump]
 
     steps:
