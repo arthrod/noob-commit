@@ -1,8 +1,10 @@
 use async_openai::{
     config::OpenAIConfig,
     types::{
-        ChatCompletionFunctionCall, ChatCompletionFunctions, ChatCompletionRequestMessage,
-        CreateChatCompletionRequestArgs, FunctionCall, Role,
+        ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
+        ChatCompletionRequestSystemMessageContent, ChatCompletionRequestUserMessage,
+        ChatCompletionRequestUserMessageContent, CreateChatCompletionRequestArgs, 
+        ChatCompletionTool, ChatCompletionToolType, FunctionObject,
     },
 };
 use clap::Parser;
@@ -11,7 +13,6 @@ use log::{error, info};
 use question::{Answer, Question};
 use rand::seq::SliceRandom;
 use schemars::gen::{SchemaGenerator, SchemaSettings};
-use serde_json::json;
 use spinners::{Spinner, Spinners};
 use noob_commit::Commit;
 use std::{
@@ -134,6 +135,51 @@ fn setup_alias() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn load_api_key() -> Result<String, String> {
+    // First, check environment variable
+    if let Ok(key) = env::var("OPENAI_API_KEY") {
+        if !key.is_empty() {
+            return Ok(key);
+        }
+    }
+    
+    // If not in environment, try to load from .env file
+    if let Ok(env_content) = fs::read_to_string(".env") {
+        for line in env_content.lines() {
+            let line = line.trim();
+            if line.starts_with("OPENAI_API_KEY=") {
+                let key = line[15..].trim().trim_matches('"').trim_matches('\'');
+                if !key.is_empty() {
+                    return Ok(key.to_string());
+                }
+            }
+        }
+    }
+    
+    Err("🔑 Oops! You forgot to set OPENAI_API_KEY. Even noobs need API keys!\n💡 Get one at https://platform.openai.com/api-keys".to_string())
+}
+
+fn is_security_file(filename: &str) -> bool {
+    // Only block exact security file names
+    matches!(filename, 
+        ".env" |
+        ".env.local" |
+        ".env.production" |
+        ".env.development" |
+        ".env.test" |
+        ".env.staging" |
+        ".npmrc" |
+        ".pypirc" |
+        "credentials" |
+        "secrets.yml" |
+        "secrets.yaml" |
+        "id_rsa" |
+        "id_ed25519" |
+        "id_ecdsa" |
+        "id_dsa"
+    ) || filename.starts_with(".env.") && filename.ends_with(".local")
+}
+
 #[tokio::main]
 async fn main() -> Result<(), ()> {
     let cli = Cli::parse();
@@ -152,10 +198,13 @@ async fn main() -> Result<(), ()> {
         }
     }
 
-    let api_token = std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| {
-        error!("🔑 Oops! You forgot to set OPENAI_API_KEY. Even noobs need API keys!\n💡 Get one at https://platform.openai.com/api-keys");
-        std::process::exit(1);
-    });
+    let api_token = match load_api_key() {
+        Ok(key) => key,
+        Err(msg) => {
+            error!("{}", msg);
+            std::process::exit(1);
+        }
+    };
 
     // Check if we're in a git repo first
     let is_repo = Command::new("git")
@@ -170,33 +219,48 @@ async fn main() -> Result<(), ()> {
         std::process::exit(1);
     }
 
-    // Auto-add files, but exclude .env unless explicitly allowed
+    // Auto-add files, but exclude security files unless explicitly allowed
+    let _add_output = Command::new("git")
+        .arg("add")
+        .arg(".")
+        .output()
+        .expect("Failed to add files");
+    
     if !cli.ok_to_send_env {
-        // First add all files
-        let _add_output = Command::new("git")
-            .arg("add")
-            .arg(".")
+        // Get list of all files in the repository
+        let all_files_output = Command::new("git")
+            .arg("ls-files")
+            .arg("--cached")
             .output()
-            .expect("Failed to add files");
+            .expect("Failed to list git files");
         
-        // Then unstage .env files if they exist
-        let env_files = [".env", ".env.local", ".env.development", ".env.production", ".env.test"];
-        for env_file in &env_files {
-            if Path::new(env_file).exists() {
-                let _unstage = Command::new("git")
-                    .arg("reset")
-                    .arg("HEAD")
-                    .arg(env_file)
-                    .output();
+        let all_files = str::from_utf8(&all_files_output.stdout).unwrap();
+        let mut unstaged_any = false;
+        
+        for file_path in all_files.lines() {
+            if let Some(filename) = Path::new(file_path).file_name() {
+                if let Some(filename_str) = filename.to_str() {
+                    if is_security_file(filename_str) {
+                        info!("🛡️  Protecting security file: {}", file_path);
+                        let unstage_result = Command::new("git")
+                            .arg("reset")
+                            .arg("HEAD")
+                            .arg(file_path)
+                            .output();
+                        
+                        match unstage_result {
+                            Ok(_) => unstaged_any = true,
+                            Err(e) => error!("⚠️  Failed to unstage {}: {}", file_path, e),
+                        }
+                    }
+                }
             }
         }
-    } else {
-        // Add all files including .env
-        let _add_output = Command::new("git")
-            .arg("add")
-            .arg(".")
-            .output()
-            .expect("Failed to add files");
+        
+        if unstaged_any {
+            info!("🔒 Unstaged security files to protect your secrets!");
+            info!("💡 Use --ok-to-send-env if you really want to include them (not recommended)");
+        }
     }
 
     let git_staged_cmd = Command::new("git")
@@ -273,52 +337,27 @@ async fn main() -> Result<(), ()> {
         .create(
             CreateChatCompletionRequestArgs::default()
                 .messages(vec![
-                    ChatCompletionRequestMessage {
-                        role: Role::System,
-                        content: Some(
-                            "You are an experienced programmer who writes great commit messages."
-                                .to_string(),
-                        ),
-                        ..Default::default()
-                    },
-                    ChatCompletionRequestMessage {
-                        role: Role::Assistant,
-                        content: Some("".to_string()),
-                        function_call: Some(FunctionCall {
-                            arguments: "{}".to_string(),
-                            name: "get_diff".to_string(),
-                        }),
-                        ..Default::default()
-                    },
-                    ChatCompletionRequestMessage {
-                        role: Role::Function,
-                        content: Some(output.to_string()),
-                        name: Some("get_diff".to_string()),
-                        ..Default::default()
+                    ChatCompletionRequestMessage::System(ChatCompletionRequestSystemMessage {
+                        content: ChatCompletionRequestSystemMessageContent::Text("You are an experienced programmer who writes great commit messages. Analyze the git diff and create a commit with a clear title and description that explains what changed and why.".to_string()),
+                        name: None,
+                    }),
+                    ChatCompletionRequestMessage::User(ChatCompletionRequestUserMessage {
+                        content: ChatCompletionRequestUserMessageContent::Text(format!("Here's the git diff:\n{}", output)),
+                        name: None,
+                    }),
+                ])
+                .tools(vec![
+                    ChatCompletionTool {
+                        r#type: ChatCompletionToolType::Function,
+                        function: FunctionObject {
+                            name: "commit".to_string(),
+                            description: Some("Creates a commit with the given title and description.".to_string()),
+                            parameters: Some(serde_json::to_value(commit_schema).unwrap()),
+                            strict: Some(false),
+                        },
                     },
                 ])
-                .functions(vec![
-                    ChatCompletionFunctions {
-                        name: "get_diff".to_string(),
-                        description: Some(
-                            "Returns the output of `git diff HEAD` as a string.".to_string(),
-                        ),
-                        parameters: Some(json!({
-                            "type": "object",
-                            "properties": {}
-                        })),
-                    },
-                    ChatCompletionFunctions {
-                        name: "commit".to_string(),
-                        description: Some(
-                            "Creates a commit with the given title and a description.".to_string(),
-                        ),
-                        parameters: Some(serde_json::to_value(commit_schema).unwrap()),
-                    },
-                ])
-                .function_call(ChatCompletionFunctionCall::Object(
-                    json!({ "name": "commit" }),
-                ))
+                .tool_choice("commit".to_string())
                 .model(&cli.model)
                 .temperature(0.0)
                 .max_tokens(cli.max_tokens)
@@ -332,10 +371,20 @@ async fn main() -> Result<(), ()> {
         sp.unwrap().stop_with_message("Finished Analyzing!".into());
     }
 
-    let commit_data = &completion.choices[0].message.function_call;
-    let commit_msg = serde_json::from_str::<Commit>(&commit_data.as_ref().unwrap().arguments)
-        .expect("Couldn't parse model response.")
-        .to_string();
+    let tool_calls = &completion.choices[0].message.tool_calls;
+    let commit_msg = if let Some(tool_calls) = tool_calls {
+        if let Some(tool_call) = tool_calls.first() {
+            serde_json::from_str::<Commit>(&tool_call.function.arguments)
+                .expect("Couldn't parse model response.")
+                .to_string()
+        } else {
+            error!("No tool calls in response");
+            std::process::exit(1);
+        }
+    } else {
+        error!("No tool calls in response");
+        std::process::exit(1);
+    };
 
     if cli.dry_run {
         info!("{}", commit_msg);
@@ -402,3 +451,4 @@ async fn main() -> Result<(), ()> {
 
     Ok(())
 }
+// Test change
