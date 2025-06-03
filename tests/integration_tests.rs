@@ -26,7 +26,7 @@ fn test_version_command() {
 
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("Noob Commit"));
-    assert!(stdout.contains("0.2.0"));
+    assert!(stdout.contains("0.4.1"));
 }
 
 #[test]
@@ -112,7 +112,9 @@ mod cli_tests {
             "--no-push",
             "--max-tokens",
             "--model",
-            "--setup-alias"
+            "--setup-alias",
+            "--yes-to-modules",
+            "--yes-to-crap"
         ];
         
         for flag in &expected_flags {
@@ -126,7 +128,7 @@ mod cli_tests {
         let stdout = String::from_utf8(output.stdout).unwrap();
         
         // Test that we use emojis for fun
-        let expected_emojis = ["🤡", "🔍", "✏️", "⚡", "🔓", "📦", "🤖", "🧠", "🛠️"];
+        let expected_emojis = ["🤡", "🔍", "✏️", "⚡", "🔓", "📦", "🤖", "🧠", "🛠️", "🗑️"];
         
         for emoji in &expected_emojis {
             assert!(stdout.contains(emoji), "Missing emoji: {}", emoji);
