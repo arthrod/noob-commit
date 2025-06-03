@@ -80,6 +80,18 @@ struct Cli {
         help = "🛠️ Setup 'nc' alias for easy access"
     )]
     setup_alias: bool,
+
+    #[arg(
+        long = "yes-to-modules",
+        help = "📦 Include dependency folders (node_modules, venv, etc) - WARNING: This will make your repo HUGE!"
+    )]
+    yes_to_modules: bool,
+
+    #[arg(
+        long = "yes-to-crap",
+        help = "🗑️ Include cache/build artifacts (__pycache__, .DS_Store, etc) - Not recommended!"
+    )]
+    yes_to_crap: bool,
 }
 
 fn setup_alias() -> Result<(), Box<dyn std::error::Error>> {
@@ -180,6 +192,106 @@ fn is_security_file(filename: &str) -> bool {
     ) || filename.starts_with(".env.") && filename.ends_with(".local")
 }
 
+fn is_module_directory(path: &str) -> bool {
+    // Check if any part of the path contains common module/dependency directories
+    let parts: Vec<&str> = path.split('/').collect();
+    for part in parts {
+        if matches!(part,
+            "node_modules" |
+            "venv" |
+            ".venv" |
+            "env" |
+            "virtualenv" |
+            ".virtualenv" |
+            "vendor" |
+            "bower_components" |
+            "jspm_packages" |
+            ".npm" |
+            ".yarn" |
+            ".pnpm-store" |
+            "pip-wheel-metadata" |
+            ".tox" |
+            ".nox" |
+            ".hypothesis" |
+            ".pytest_cache" |
+            "htmlcov" |
+            ".coverage" |
+            "target" |  // Rust
+            "Pods" |    // iOS
+            ".gradle" | // Android
+            "build" |   // Various build systems
+            "dist"      // Distribution folders
+        ) {
+            return true;
+        }
+    }
+    false
+}
+
+fn is_crap_file(path: &str) -> bool {
+    // Check if the path contains cache/build artifacts
+    let filename = Path::new(path).file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or("");
+    
+    // Check exact filenames
+    if matches!(filename,
+        ".DS_Store" |
+        "Thumbs.db" |
+        "desktop.ini" |
+        ".gitkeep" |
+        ".keep"
+    ) {
+        return true;
+    }
+    
+    // Check if it's an editor temp file
+    if filename.ends_with(".swp") || filename.ends_with(".swo") || filename.ends_with(".swn") {
+        return true;
+    }
+    
+    // Check if it's a backup/temp file
+    if filename.ends_with(".log") || filename.ends_with(".tmp") || filename.ends_with(".temp") ||
+       filename.ends_with(".cache") || filename.ends_with(".bak") || filename.ends_with(".backup") ||
+       filename.ends_with(".old") || filename.ends_with(".orig") || filename.ends_with("~") {
+        return true;
+    }
+    
+    // Check file extensions
+    if let Some(ext) = Path::new(filename).extension().and_then(|e| e.to_str()) {
+        if matches!(ext,
+            "pyc" | "pyo" | "pyd" | // Python compiled
+            "so" | "dylib" | "dll" | // Native libraries
+            "class" | "jar" |        // Java
+            "o" | "a" |              // C/C++ objects
+            "exe" |                  // Windows executables
+            "idb" | "pdb" |          // Debug databases
+            "sage" |                 // Sage
+            "egg-info"               // Python egg info
+        ) {
+            return true;
+        }
+    }
+    
+    // Check if path contains __pycache__ or similar
+    path.contains("__pycache__") ||
+    path.contains(".pytest_cache") ||
+    path.contains(".mypy_cache") ||
+    path.contains(".ruff_cache") ||
+    path.contains(".sass-cache") ||
+    path.contains(".cache") ||
+    path.contains(".parcel-cache") ||
+    path.contains(".next") ||
+    path.contains(".nuxt") ||
+    path.contains(".docusaurus") ||
+    path.contains(".serverless") ||
+    path.contains(".fusebox") ||
+    path.contains(".dynamodb") ||
+    path.contains(".tern-port") ||
+    path.contains(".env.test") ||
+    path.contains(".yarn-integrity")
+}
+
 #[tokio::main]
 async fn main() -> Result<(), ()> {
     let cli = Cli::parse();
@@ -226,41 +338,83 @@ async fn main() -> Result<(), ()> {
         .output()
         .expect("Failed to add files");
     
-    if !cli.ok_to_send_env {
-        // Get list of all files in the repository
-        let all_files_output = Command::new("git")
-            .arg("ls-files")
-            .arg("--cached")
-            .output()
-            .expect("Failed to list git files");
+    // Get list of all files in the repository
+    let all_files_output = Command::new("git")
+        .arg("ls-files")
+        .arg("--cached")
+        .output()
+        .expect("Failed to list git files");
+    
+    let all_files = str::from_utf8(&all_files_output.stdout).unwrap();
+    let mut unstaged_security = false;
+    let mut unstaged_modules = false;
+    let mut unstaged_crap = false;
+    
+    for file_path in all_files.lines() {
+        let mut should_unstage = false;
+        let mut reason = "";
         
-        let all_files = str::from_utf8(&all_files_output.stdout).unwrap();
-        let mut unstaged_any = false;
-        
-        for file_path in all_files.lines() {
+        // Check security files
+        if !cli.ok_to_send_env {
             if let Some(filename) = Path::new(file_path).file_name() {
                 if let Some(filename_str) = filename.to_str() {
                     if is_security_file(filename_str) {
-                        info!("🛡️  Protecting security file: {}", file_path);
-                        let unstage_result = Command::new("git")
-                            .arg("reset")
-                            .arg("HEAD")
-                            .arg(file_path)
-                            .output();
-                        
-                        match unstage_result {
-                            Ok(_) => unstaged_any = true,
-                            Err(e) => error!("⚠️  Failed to unstage {}: {}", file_path, e),
-                        }
+                        should_unstage = true;
+                        reason = "security file";
+                        unstaged_security = true;
                     }
                 }
             }
         }
         
-        if unstaged_any {
-            info!("🔒 Unstaged security files to protect your secrets!");
-            info!("💡 Use --ok-to-send-env if you really want to include them (not recommended)");
+        // Check module directories
+        if !cli.yes_to_modules && is_module_directory(file_path) {
+            should_unstage = true;
+            reason = "dependency/module folder";
+            unstaged_modules = true;
         }
+        
+        // Check crap files
+        if !cli.yes_to_crap && is_crap_file(file_path) {
+            should_unstage = true;
+            reason = "cache/build artifact";
+            unstaged_crap = true;
+        }
+        
+        if should_unstage {
+            info!("🛡️  Protecting {} ({}): {}", reason, 
+                if reason == "security file" { "use --ok-to-send-env to include" }
+                else if reason == "dependency/module folder" { "use --yes-to-modules to include" }
+                else { "use --yes-to-crap to include" },
+                file_path
+            );
+            
+            let unstage_result = Command::new("git")
+                .arg("reset")
+                .arg("HEAD")
+                .arg(file_path)
+                .output();
+            
+            if let Err(e) = unstage_result {
+                error!("⚠️  Failed to unstage {}: {}", file_path, e);
+            }
+        }
+    }
+    
+    // Show summary messages
+    if unstaged_security {
+        info!("🔒 Unstaged security files to protect your secrets!");
+        info!("💡 Use --ok-to-send-env if you really want to include them (not recommended)");
+    }
+    
+    if unstaged_modules {
+        info!("📦 Unstaged dependency folders to keep your repo size reasonable!");
+        info!("💡 Use --yes-to-modules if you really want to include them (repo will be HUGE!)");
+    }
+    
+    if unstaged_crap {
+        info!("🗑️  Unstaged cache/build artifacts to keep your repo clean!");
+        info!("💡 Use --yes-to-crap if you really want to include them (not recommended)");
     }
 
     let git_staged_cmd = Command::new("git")
