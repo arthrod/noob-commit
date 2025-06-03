@@ -32,3 +32,11 @@ path = "src/lib.rs"
 [[bin]]
 name = "noob-commit"
 path = "src/main.rs"
+
+[[example]]
+name = "basic_usage"
+path = "examples/basic_usage.rs"
+
+[[example]]
+name = "mock_commit"
+path = "examples/mock_commit.rs"
