@@ -12,7 +12,7 @@ description = "🤡 For devs who code like ninjas but commit like toddlers. Stop
 authors = ["arthrod <your-email@example.com>"]
 
 [dependencies]
-rand = "0.8.5"
+rand = "0.9.0"
 serde = "1.0.164"
 spinners = "4.1.0"
 question = "0.2.2"
