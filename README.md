@@ -22,9 +22,13 @@ How many times have you:
 
 **noob-commit** automatically:
 1. **Adds all your files** (`git add .`) - because you always forget
-2. **Filters out .env files** - saves you from the shame of leaked API keys  
+2. **Smart filtering** - protects you from committing:
+   - 🔐 Security files (.env, credentials, secrets)
+   - 📦 Dependency folders (node_modules, venv, target)
+   - 🗑️ Build artifacts (__pycache__, .DS_Store, *.pyc)
 3. **Generates intelligent commit messages** using AI - no more "update stuff"
 4. **Pushes to remote** - because why not finish the job?
+5. **Loads API keys smartly** - from environment or .env file
 
 ### Installation 🚀
 
@@ -71,6 +75,12 @@ noob-commit --force
 # Include .env files (living dangerously)
 noob-commit --ok-to-send-env
 
+# Include dependency folders (WARNING: huge repo!)
+noob-commit --yes-to-modules
+
+# Include build artifacts (not recommended)
+noob-commit --yes-to-crap
+
 # Just commit, don't push
 noob-commit --no-push
 
@@ -107,14 +117,37 @@ nc
 nc --review
 ```
 
+**Working on a messy project:**
+```bash
+# You have node_modules, __pycache__, .env files everywhere
+# noob-commit filters them all automatically!
+nc
+
+# Output:
+# 🛡️  Protecting security file: .env
+# 📦 Unstaged dependency folders: node_modules/
+# 🗑️  Unstaged cache/build artifacts: __pycache__/
+# ✅ Generated perfect commit message for your actual code changes
+```
+
+**The "I know what I'm doing" workflow:**
+```bash
+# Include EVERYTHING (use with caution!)
+nc --ok-to-send-env --yes-to-modules --yes-to-crap
+```
+
 ### Features 🔥
 
 - 🤖 **AI-powered commit messages** - Actually descriptive commits
-- 🛡️ **Auto .env protection** - Saves you from security nightmares  
+- 🛡️ **Smart security filtering** - Protects .env, credentials, secrets, SSH keys
+- 📦 **Dependency folder filtering** - Keeps node_modules, venv, vendor out
+- 🗑️ **Build artifact filtering** - No more __pycache__, .DS_Store, *.pyc
 - ⚡ **One command workflow** - Add, commit, push in one go
+- 🔑 **Flexible API key loading** - From environment or .env file
 - 🎭 **Self-deprecating humor** - Because we're all noobs sometimes
 - 🔧 **Highly configurable** - But works great out of the box
 - 🚨 **Noob-friendly errors** - Helpful messages when things go wrong
+- 🚀 **Modern async implementation** - Fast and efficient
 
 ### Configuration 🛠️
 
@@ -128,7 +161,31 @@ All the knobs you might want to turn:
 | `--force` | Skip confirmations | `false` |
 | `--review` | Edit AI's message | `false` |
 | `--ok-to-send-env` | Include .env files | `false` |
+| `--yes-to-modules` | Include dependency folders | `false` |
+| `--yes-to-crap` | Include build artifacts | `false` |
 | `--no-push` | Don't push to remote | `false` |
+| `--setup-alias` | Setup 'nc' alias | - |
+
+### What Gets Filtered? 🚫
+
+**Security Files** (use `--ok-to-send-env` to include):
+- `.env`, `.env.local`, `.env.production`, etc.
+- `.npmrc`, `.pypirc`
+- `credentials`, `secrets.yml`, `secrets.yaml`
+- SSH keys: `id_rsa`, `id_ed25519`, etc.
+
+**Dependency Folders** (use `--yes-to-modules` to include):
+- `node_modules/`, `venv/`, `.venv/`, `vendor/`
+- `bower_components/`, `jspm_packages/`
+- `target/` (Rust), `Pods/` (iOS), `.gradle/` (Android)
+- `build/`, `dist/` (various build systems)
+
+**Build Artifacts** (use `--yes-to-crap` to include):
+- `__pycache__/`, `*.pyc`, `*.pyo`
+- `.DS_Store`, `Thumbs.db`, `desktop.ini`
+- `*.swp`, `*.swo`, `*.swn` (editor files)
+- `*.log`, `*.tmp`, `*.cache`, `*.bak`
+- Compiled files: `*.o`, `*.a`, `*.class`, `*.so`, `*.dll`
 
 ### Contributing 🤝
 
@@ -155,9 +212,13 @@ Quantas vezes você:
 
 **noob-commit** automaticamente:
 1. **Adiciona todos os arquivos** (`git add .`) - porque você sempre esquece
-2. **Filtra arquivos .env** - te salva da vergonha de vazar chaves de API
+2. **Filtragem inteligente** - te protege de commitar:
+   - 🔐 Arquivos de segurança (.env, credentials, secrets)
+   - 📦 Pastas de dependências (node_modules, venv, target)
+   - 🗑️ Artefatos de build (__pycache__, .DS_Store, *.pyc)
 3. **Gera mensagens de commit inteligentes** usando IA - chega de "update bagui"
 4. **Faz push pro remoto** - porque por que não terminar o serviço?
+5. **Carrega chaves de API** - do ambiente ou arquivo .env
 
 ### Instalação 🚀
 
@@ -217,11 +278,15 @@ noob-commit --review
 ### Recursos 🔥
 
 - 🤖 **Mensagens de commit com IA** - Commits realmente descritivos
-- 🛡️ **Proteção automática de .env** - Te salva de pesadelos de segurança
+- 🛡️ **Filtragem inteligente de segurança** - Protege .env, credentials, secrets, chaves SSH
+- 📦 **Filtragem de pastas de dependências** - Mantém node_modules, venv, vendor fora
+- 🗑️ **Filtragem de artefatos de build** - Sem mais __pycache__, .DS_Store, *.pyc
 - ⚡ **Fluxo de um comando só** - Add, commit, push de uma vez
+- 🔑 **Carregamento flexível de API key** - Do ambiente ou arquivo .env
 - 🎭 **Humor autodepreciativo** - Porque todos somos noobs às vezes
 - 🔧 **Altamente configurável** - Mas funciona bem direto da caixa
 - 🚨 **Erros amigáveis para noobs** - Mensagens úteis quando dá ruim
+- 🚀 **Implementação async moderna** - Rápida e eficiente
 
 ---
 
