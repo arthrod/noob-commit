@@ -257,39 +257,86 @@ fn is_crap_file(path: &str) -> bool {
         return true;
     }
     
-    // Check file extensions
+    // Check file extensions more carefully
+    // We want to filter actual compiled/generated files, not files that happen to contain
+    // these strings in their name (e.g., "demo.pyc" as a regular file name)
     if let Some(ext) = Path::new(filename).extension().and_then(|e| e.to_str()) {
-        if matches!(ext,
-            "pyc" | "pyo" | "pyd" | // Python compiled
-            "so" | "dylib" | "dll" | // Native libraries
-            "class" | "jar" |        // Java
-            "o" | "a" |              // C/C++ objects
-            "exe" |                  // Windows executables
-            "idb" | "pdb" |          // Debug databases
-            "sage" |                 // Sage
-            "egg-info"               // Python egg info
-        ) {
-            return true;
+        // Only filter if it's ACTUALLY a compiled/generated file extension
+        match ext {
+            // Python compiled
+            "pyc" | "pyo" | "pyd" => {
+                // Don't filter if it's clearly not a Python bytecode file
+                // Real Python bytecode files are binary and typically in __pycache__
+                // or have names like script.cpython-39.pyc
+                if path.contains("__pycache__") || filename.contains("cpython") {
+                    return true;
+                }
+                // Also filter if it's in a directory that suggests it's compiled
+                if path.contains("/build/") || path.contains("/dist/") || 
+                   path.contains("/.eggs/") || path.contains("/wheelhouse/") {
+                    return true;
+                }
+                // For standalone .pyc files, we'll be conservative and filter them
+                // unless they're in a source directory (which would be unusual)
+                if !path.contains("/src/") && !path.contains("/docs/") {
+                    return true;
+                }
+                return false;
+            },
+            // Native libraries - be careful not to filter legitimate shared libraries
+            "so" | "dylib" | "dll" => {
+                // Filter if it looks like a build artifact
+                return path.contains("/build/") || path.contains("/dist/") || 
+                       path.contains("/target/") || path.contains("/.libs/");
+            },
+            // Java
+            "class" => return true,  // Java compiled files
+            "jar" => {
+                // JAR files in dependencies folders should be filtered
+                return path.contains("/lib/") || path.contains("/libs/") || 
+                       path.contains("/vendor/") || path.contains("/dependencies/");
+            },
+            // C/C++ objects
+            "o" | "a" => {
+                // Object files and archives are typically build artifacts
+                return true;
+            },
+            // Windows executables
+            "exe" => {
+                // Filter if in common build directories
+                return path.contains("/build/") || path.contains("/dist/") || 
+                       path.contains("/target/") || path.contains("/bin/") ||
+                       path.contains("/Debug/") || path.contains("/Release/");
+            },
+            // Debug databases
+            "idb" | "pdb" => return true,
+            // Other build artifacts
+            "sage" => return true,
+            _ => {}
         }
     }
     
-    // Check if path contains __pycache__ or similar
-    path.contains("__pycache__") ||
-    path.contains(".pytest_cache") ||
-    path.contains(".mypy_cache") ||
-    path.contains(".ruff_cache") ||
-    path.contains(".sass-cache") ||
-    path.contains(".cache") ||
-    path.contains(".parcel-cache") ||
-    path.contains(".next") ||
-    path.contains(".nuxt") ||
-    path.contains(".docusaurus") ||
-    path.contains(".serverless") ||
-    path.contains(".fusebox") ||
-    path.contains(".dynamodb") ||
-    path.contains(".tern-port") ||
-    path.contains(".env.test") ||
-    path.contains(".yarn-integrity")
+    // Special handling for egg-info (it's a directory suffix, not a file extension)
+    if filename.ends_with(".egg-info") || path.contains(".egg-info/") {
+        return true;
+    }
+    
+    // Check if path contains cache directories
+    path.contains("/__pycache__/") ||
+    path.contains("/.pytest_cache/") ||
+    path.contains("/.mypy_cache/") ||
+    path.contains("/.ruff_cache/") ||
+    path.contains("/.sass-cache/") ||
+    path.contains("/.cache/") ||
+    path.contains("/.parcel-cache/") ||
+    path.contains("/.next/") ||
+    path.contains("/.nuxt/") ||
+    path.contains("/.docusaurus/") ||
+    path.contains("/.serverless/") ||
+    path.contains("/.fusebox/") ||
+    path.contains("/.dynamodb/") ||
+    path.contains("/.tern-port") ||
+    path.contains("/.yarn-integrity")
 }
 
 #[tokio::main]

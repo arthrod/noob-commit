@@ -1,7 +1,7 @@
 [package]
 license = "MIT"
 edition = "2021"
-version = "0.4.0"
+version = "0.4.1"
 name = "noob-commit"
 readme = "README.md"
 categories = ["command-line-utilities", "development-tools"]
@@ -9,7 +9,7 @@ keywords = ["git", "commit", "ai", "automation", "cli"]
 homepage = "https://github.com/arthrod/noob-commit"
 repository = "https://github.com/arthrod/noob-commit"
 description = "🤡 For devs who code like ninjas but commit like toddlers. Stop writing 'fix stuff' commits! How many times did you rush for a new API key or pay that shameful OpenAI bill? No more!"
-authors = ["arthrod <your-email@example.com>"]
+authors = ["Arthur Souza Rodrigues <arthrod@umich.edu>"]
 
 [dependencies]
 rand = "0.8.5"
