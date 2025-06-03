@@ -1,14 +1,15 @@
 [package]
 license = "MIT"
 edition = "2021"
-version = "0.1.4"
-name = "auto-commit"
+version = "0.2.0"
+name = "noob-commit"
 readme = "README.md"
-categories = ["command-line-utilities"]
-homepage = "https://github.com/m1guelpf/auto-commit"
-repository = "https://github.com/m1guelpf/auto-commit"
-description = "Automagically generate commit messages."
-authors = ["Miguel Piedrafita <soy@miguelpiedrafita.com>"]
+categories = ["command-line-utilities", "development-tools"]
+keywords = ["git", "commit", "ai", "automation", "cli"]
+homepage = "https://github.com/arthrod/noob-commit"
+repository = "https://github.com/arthrod/noob-commit"
+description = "🤡 For devs who code like ninjas but commit like toddlers. Stop writing 'fix stuff' commits! How many times did you rush for a new API key or pay that shameful OpenAI bill? No more!"
+authors = ["arthrod <your-email@example.com>"]
 
 [dependencies]
 rand = "0.8.5"
@@ -23,3 +24,11 @@ log = { version = "0.4.8", features = ["std"] }
 tokio = { version = "1.28.2", features = ["full"] }
 clap = { version = "4.0.18", features = ["derive"] }
 async-openai = { version = "0.12.0", default-features = false, features = ["native-tls"] }
+
+[lib]
+name = "noob_commit"
+path = "src/lib.rs"
+
+[[bin]]
+name = "noob-commit"
+path = "src/main.rs"

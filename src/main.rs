@@ -10,57 +10,128 @@ use clap_verbosity_flag::{InfoLevel, Verbosity};
 use log::{error, info};
 use question::{Answer, Question};
 use rand::seq::SliceRandom;
-use schemars::{
-    gen::{SchemaGenerator, SchemaSettings},
-    JsonSchema,
-};
+use schemars::gen::{SchemaGenerator, SchemaSettings};
 use serde_json::json;
 use spinners::{Spinner, Spinners};
+use noob_commit::Commit;
 use std::{
+    env,
+    fs::{self, OpenOptions},
     io::Write,
+    path::Path,
     process::{Command, Stdio},
     str,
 };
 
 #[derive(Parser)]
 #[command(version)]
-#[command(name = "Auto Commit")]
-#[command(author = "Miguel Piedrafita <soy@miguelpiedrafita.com>")]
-#[command(about = "Automagically generate commit messages.", long_about = None)]
+#[command(name = "Noob Commit")]
+#[command(author = "Noob Commit Contributors")]
+#[command(about = "🤡 For devs who code like ninjas but commit like toddlers\n\nTired of writing 'fix stuff' and 'idk it works now' commits?\nThis tool auto-adds files, asks AI to write proper commits, and pushes for you.\nBecause we're great at coding but terrible at git.", long_about = None)]
 struct Cli {
     #[clap(flatten)]
     verbose: Verbosity<InfoLevel>,
 
     #[arg(
         long = "dry-run",
-        help = "Output the generated message, but don't create a commit."
+        help = "🔍 Just show me what commit message you'd create (for anxious devs)"
     )]
     dry_run: bool,
 
     #[arg(
         short,
         long,
-        help = "Edit the generated commit message before committing."
+        help = "✏️ Let me edit the AI's work (because sometimes AI is also bad at git)"
     )]
     review: bool,
 
-    #[arg(short, long, help = "Don't ask for confirmation before committing.")]
+    #[arg(short, long, help = "⚡ YOLO mode - just commit everything (living dangerously)")]
     force: bool,
+
+    #[arg(
+        long = "ok-to-send-env",
+        help = "🔓 Include .env files (for when you want to leak your API keys like a pro)"
+    )]
+    ok_to_send_env: bool,
+
+    #[arg(
+        long = "no-push",
+        help = "📦 Commit but don't push (for commitment-phobic developers)"
+    )]
+    no_push: bool,
+
+    #[arg(
+        long = "max-tokens",
+        help = "🤖 How much the AI can ramble (higher = more verbose commits)",
+        default_value = "2000"
+    )]
+    max_tokens: u16,
+
+    #[arg(
+        long = "model",
+        help = "🧠 Pick your AI overlord (gpt-4.1-mini is cheap and good enough)",
+        default_value = "gpt-4.1-mini"
+    )]
+    model: String,
+
+    #[arg(
+        long = "setup-alias",
+        help = "🛠️ Setup 'nc' alias for easy access"
+    )]
+    setup_alias: bool,
 }
 
-#[derive(Debug, serde::Deserialize, JsonSchema)]
-struct Commit {
-    /// The title of the commit.
-    title: String,
-
-    /// An exhaustive description of the changes.
-    description: String,
-}
-
-impl ToString for Commit {
-    fn to_string(&self) -> String {
-        format!("{}\n\n{}", self.title, self.description)
+fn setup_alias() -> Result<(), Box<dyn std::error::Error>> {
+    println!("🤡 Setting up 'nc' alias for noob-commit...");
+    
+    let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+    let shell_name = Path::new(&shell).file_name().unwrap().to_str().unwrap();
+    
+    let config_file = match shell_name {
+        "zsh" => {
+            let mut path = env::var("HOME")?;
+            path.push_str("/.zshrc");
+            path
+        },
+        "bash" => {
+            let mut path = env::var("HOME")?;
+            path.push_str("/.bashrc");
+            path
+        },
+        "fish" => {
+            let mut path = env::var("HOME")?;
+            path.push_str("/.config/fish/config.fish");
+            path
+        },
+        _ => {
+            println!("⚠️  Unknown shell: {}. Please manually add 'alias nc=noob-commit' to your shell config.", shell_name);
+            return Ok(());
+        }
+    };
+    
+    let alias_line = "alias nc='noob-commit'";
+    
+    // Check if alias already exists
+    if let Ok(content) = fs::read_to_string(&config_file) {
+        if content.contains("alias nc") || content.contains("nc='noob-commit'") {
+            println!("✅ 'nc' alias already exists!");
+            return Ok(());
+        }
     }
+    
+    // Add alias to config file
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&config_file)?;
+    
+    writeln!(file, "\n# Added by noob-commit")?;
+    writeln!(file, "{}", alias_line)?;
+    
+    println!("✅ Added 'nc' alias to {}", config_file);
+    println!("💡 Restart your terminal or run 'source {}' to use 'nc' command", config_file);
+    
+    Ok(())
 }
 
 #[tokio::main]
@@ -70,10 +141,63 @@ async fn main() -> Result<(), ()> {
         .filter_level(cli.verbose.log_level_filter())
         .init();
 
+    // Handle alias setup
+    if cli.setup_alias {
+        match setup_alias() {
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                error!("Failed to setup alias: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
     let api_token = std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| {
-        error!("Please set the OPENAI_API_KEY environment variable.");
+        error!("🔑 Oops! You forgot to set OPENAI_API_KEY. Even noobs need API keys!\n💡 Get one at https://platform.openai.com/api-keys");
         std::process::exit(1);
     });
+
+    // Check if we're in a git repo first
+    let is_repo = Command::new("git")
+        .arg("rev-parse")
+        .arg("--is-inside-work-tree")
+        .output()
+        .expect("Failed to check if this is a git repository.")
+        .stdout;
+
+    if str::from_utf8(&is_repo).unwrap().trim() != "true" {
+        error!("🙈 This isn't a git repo! Run 'git init' first, or cd into your project folder.\n💡 Even noobs need to be in the right directory!");
+        std::process::exit(1);
+    }
+
+    // Auto-add files, but exclude .env unless explicitly allowed
+    if !cli.ok_to_send_env {
+        // First add all files
+        let _add_output = Command::new("git")
+            .arg("add")
+            .arg(".")
+            .output()
+            .expect("Failed to add files");
+        
+        // Then unstage .env files if they exist
+        let env_files = [".env", ".env.local", ".env.development", ".env.production", ".env.test"];
+        for env_file in &env_files {
+            if Path::new(env_file).exists() {
+                let _unstage = Command::new("git")
+                    .arg("reset")
+                    .arg("HEAD")
+                    .arg(env_file)
+                    .output();
+            }
+        }
+    } else {
+        // Add all files including .env
+        let _add_output = Command::new("git")
+            .arg("add")
+            .arg(".")
+            .output()
+            .expect("Failed to add files");
+    }
 
     let git_staged_cmd = Command::new("git")
         .arg("diff")
@@ -85,18 +209,7 @@ async fn main() -> Result<(), ()> {
     let git_staged_cmd = str::from_utf8(&git_staged_cmd).unwrap();
 
     if git_staged_cmd.is_empty() {
-        error!("There are no staged files to commit.\nTry running `git add` to stage some files.");
-    }
-
-    let is_repo = Command::new("git")
-        .arg("rev-parse")
-        .arg("--is-inside-work-tree")
-        .output()
-        .expect("Failed to check if this is a git repository.")
-        .stdout;
-
-    if str::from_utf8(&is_repo).unwrap().trim() != "true" {
-        error!("It looks like you are not in a git repository.\nPlease run this command from the root of a git repository, or initialize one using `git init`.");
+        error!("🤷 Nothing to commit! Did you actually write any code?\n💡 If you did, something went wrong with auto-adding files.");
         std::process::exit(1);
     }
 
@@ -206,9 +319,9 @@ async fn main() -> Result<(), ()> {
                 .function_call(ChatCompletionFunctionCall::Object(
                     json!({ "name": "commit" }),
                 ))
-                .model("gpt-3.5-turbo-16k")
+                .model(&cli.model)
                 .temperature(0.0)
-                .max_tokens(2000u16)
+                .max_tokens(cli.max_tokens)
                 .build()
                 .unwrap(),
         )
@@ -242,7 +355,7 @@ async fn main() -> Result<(), ()> {
                 .expect("Couldn't ask question.");
 
             if answer == Answer::NO {
-                error!("Commit aborted by user.");
+                error!("😅 Chickened out? That's okay, even I would be scared of my own commits sometimes.");
                 std::process::exit(1);
             }
             info!("Committing Message...");
@@ -270,6 +383,22 @@ async fn main() -> Result<(), ()> {
         .expect("There was an error when creating the commit.");
 
     info!("{}", str::from_utf8(&commit_output.stdout).unwrap());
+
+    // Push to remote if not disabled
+    if !cli.no_push {
+        info!("Pushing to remote...");
+        let push_output = Command::new("git")
+            .arg("push")
+            .output()
+            .expect("Failed to push to remote");
+        
+        if push_output.status.success() {
+            info!("🚀 Pushed to remote! Your code is now bothering other developers.");
+        } else {
+            let stderr = str::from_utf8(&push_output.stderr).unwrap();
+            error!("😬 Push failed: {}\n💡 Maybe someone else pushed first? Try 'git pull' and run me again.", stderr);
+        }
+    }
 
     Ok(())
 }
