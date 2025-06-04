@@ -15,7 +15,7 @@ use rand::prelude::*;
 use schemars::SchemaGenerator;
 use schemars::generate::SchemaSettings;
 use spinners::{Spinner, Spinners};
-use noob_commit::Commit;
+use noob_commit::CommitAdvice;
 use std::{
     env,
     fs::{self, OpenOptions},
@@ -534,7 +534,7 @@ async fn main() -> Result<(), ()> {
     });
     let mut generator = SchemaGenerator::new(settings);
 
-    let commit_schema = generator.subschema_for::<Commit>();
+    let commit_schema = generator.subschema_for::<CommitAdvice>();
 
     let completion = client
         .chat()
@@ -542,7 +542,9 @@ async fn main() -> Result<(), ()> {
             CreateChatCompletionRequestArgs::default()
                 .messages(vec![
                     ChatCompletionRequestMessage::System(ChatCompletionRequestSystemMessage {
-                        content: ChatCompletionRequestSystemMessageContent::Text("You are an experienced programmer who writes great commit messages. Analyze the git diff and create a commit with a clear title and description that explains what changed and why.".to_string()),
+                        content: ChatCompletionRequestSystemMessageContent::Text(
+                            "You are an experienced programmer who writes great commit messages. Analyze the git diff and return JSON with a 'message' for the noob developer and a 'commit' containing title and description. If you find any API keys, mention 'WARNING!!! API_KEY DETECTED IN THIS PART' in the message.".to_string()
+                        ),
                         name: None,
                     }),
                     ChatCompletionRequestMessage::User(ChatCompletionRequestUserMessage {
@@ -555,7 +557,7 @@ async fn main() -> Result<(), ()> {
                         r#type: ChatCompletionToolType::Function,
                         function: FunctionObject {
                             name: "commit".to_string(),
-                            description: Some("Creates a commit with the given title and description.".to_string()),
+                            description: Some("Returns a message for the developer and a structured commit.".to_string()),
                             parameters: Some(serde_json::to_value(commit_schema).unwrap()),
                             strict: Some(false),
                         },
@@ -576,11 +578,11 @@ async fn main() -> Result<(), ()> {
     }
 
     let tool_calls = &completion.choices[0].message.tool_calls;
-    let commit_msg = if let Some(tool_calls) = tool_calls {
+    let (noob_msg, commit_msg) = if let Some(tool_calls) = tool_calls {
         if let Some(tool_call) = tool_calls.first() {
-            serde_json::from_str::<Commit>(&tool_call.function.arguments)
-                .expect("Couldn't parse model response.")
-                .to_string()
+            let advice: CommitAdvice = serde_json::from_str(&tool_call.function.arguments)
+                .expect("Couldn't parse model response.");
+            (advice.message, advice.commit.to_string())
         } else {
             error!("No tool calls in response");
             std::process::exit(1);
@@ -592,12 +594,14 @@ async fn main() -> Result<(), ()> {
 
     if cli.dry_run {
         info!("{}", commit_msg);
+        info!("{}", noob_msg);
         return Ok(());
     } else {
         info!(
             "Proposed Commit:\n------------------------------\n{}\n------------------------------",
             commit_msg
         );
+        info!("Advice: {}", noob_msg);
 
         if !cli.force {
             let answer = Question::new("Do you want to continue? (Y/n)")

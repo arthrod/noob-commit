@@ -9,15 +9,35 @@ pub struct Commit {
     pub description: String,
 }
 
+#[derive(Debug, Deserialize, JsonSchema, Serialize)]
+pub struct CommitAdvice {
+    /// Friendly message to the noob developer.
+    pub message: String,
+    /// The actual commit information.
+    pub commit: Commit,
+}
+
 impl ToString for Commit {
     fn to_string(&self) -> String {
         format!("{}\n\n{}", self.title, self.description)
     }
 }
 
+impl ToString for CommitAdvice {
+    fn to_string(&self) -> String {
+        format!("{}\n\n{}", self.message, self.commit.to_string())
+    }
+}
+
 impl Commit {
     pub fn new(title: String, description: String) -> Self {
         Self { title, description }
+    }
+}
+
+impl CommitAdvice {
+    pub fn new(message: String, commit: Commit) -> Self {
+        Self { message, commit }
     }
 }
 
@@ -85,8 +105,18 @@ mod tests {
     fn test_commit_deserialization() {
         let json = r#"{"title":"Test commit","description":"This is a test"}"#;
         let commit: Commit = serde_json::from_str(json).unwrap();
-        
+
         assert_eq!(commit.title, "Test commit");
         assert_eq!(commit.description, "This is a test");
+    }
+
+    #[test]
+    fn test_commit_advice_to_string() {
+        let commit = Commit::new("Init".to_string(), "First commit".to_string());
+        let advice = CommitAdvice::new("Be careful".to_string(), commit);
+        let result = advice.to_string();
+        assert!(result.contains("Be careful"));
+        assert!(result.contains("Init"));
+        assert!(result.contains("First commit"));
     }
 }
