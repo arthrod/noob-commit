@@ -81,6 +81,9 @@ noob-commit --yes-to-modules
 # Include build artifacts (not recommended)
 noob-commit --yes-to-crap
 
+# Output the AI advice in Brazilian Portuguese
+noob-commit -b
+
 # Just commit, don't push
 noob-commit --no-push
 
@@ -134,6 +137,9 @@ nc
 ```bash
 # Include EVERYTHING (use with caution!)
 nc --ok-to-send-env --yes-to-modules --yes-to-crap
+
+# Get advice in Portuguese (for BR devs)
+nc -b
 ```
 
 ### Features 🔥
@@ -155,16 +161,18 @@ All the knobs you might want to turn:
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--model` | AI model to use | `gpt-4.1-mini` |
-| `--max-tokens` | How much the AI can ramble | `2000` |
-| `--dry-run` | Just show what would happen | `false` |
-| `--force` | Skip confirmations | `false` |
-| `--review` | Edit AI's message | `false` |
-| `--ok-to-send-env` | Include .env files | `false` |
-| `--yes-to-modules` | Include dependency folders | `false` |
-| `--yes-to-crap` | Include build artifacts | `false` |
-| `--no-push` | Don't push to remote | `false` |
-| `--setup-alias` | Setup 'nc' alias | - |
+| `-m, --model` | AI model to use | `gpt-4.1-mini` |
+| `-t, --max-tokens` | How much the AI can ramble | `2000` |
+| `-d, --dry-run` | Just show what would happen | `false` |
+| `-f, --force` | Skip confirmations | `false` |
+| `-r, --review` | Edit AI's message | `false` |
+| `-e, --ok-to-send-env` | Include .env files | `false` |
+| `-M, --yes-to-modules` | Include dependency folders | `false` |
+| `-c, --yes-to-crap` | Include build artifacts | `false` |
+| `-b, --br-huehuehue` | Output advice in Brazilian Portuguese | `false` |
+| `-a, --no-f-ads` | Disable the silly post-commit tagline | `false` |
+| `-p, --no-push` | Don't push to remote | `false` |
+| `-s, --setup-alias` | Setup 'nc' alias | - |
 
 ### What Gets Filtered? 🚫
 

@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, JsonSchema, Serialize)]
 pub struct Commit {
@@ -51,29 +51,23 @@ mod tests {
             "Add noob-friendly features".to_string(),
             "Added self-deprecating humor and alias setup functionality for developers who are great at coding but terrible at git.".to_string(),
         );
-        
+
         assert_eq!(commit.title, "Add noob-friendly features");
         assert!(commit.description.contains("self-deprecating"));
     }
 
     #[test]
     fn test_commit_to_string() {
-        let commit = Commit::new(
-            "Fix stuff".to_string(),
-            "idk it works now".to_string(),
-        );
-        
+        let commit = Commit::new("Fix stuff".to_string(), "idk it works now".to_string());
+
         let result = commit.to_string();
         assert_eq!(result, "Fix stuff\n\nidk it works now");
     }
 
     #[test]
     fn test_commit_with_empty_description() {
-        let commit = Commit::new(
-            "Update README".to_string(),
-            "".to_string(),
-        );
-        
+        let commit = Commit::new("Update README".to_string(), "".to_string());
+
         let result = commit.to_string();
         assert_eq!(result, "Update README\n\n");
     }
@@ -84,18 +78,15 @@ mod tests {
             "Refactor code".to_string(),
             "Line 1\nLine 2\nLine 3".to_string(),
         );
-        
+
         let result = commit.to_string();
         assert_eq!(result, "Refactor code\n\nLine 1\nLine 2\nLine 3");
     }
 
     #[test]
     fn test_commit_serialization() {
-        let commit = Commit::new(
-            "Test commit".to_string(),
-            "This is a test".to_string(),
-        );
-        
+        let commit = Commit::new("Test commit".to_string(), "This is a test".to_string());
+
         let json = serde_json::to_string(&commit).unwrap();
         assert!(json.contains("Test commit"));
         assert!(json.contains("This is a test"));

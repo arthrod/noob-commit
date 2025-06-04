@@ -8,13 +8,14 @@ fn test_help_command() {
         .expect("Failed to execute help command");
 
     let stdout = String::from_utf8(output.stdout).unwrap();
-    
+
     // Check that help contains our noob-friendly messages
     assert!(stdout.contains("For devs who code like ninjas but commit like toddlers"));
     assert!(stdout.contains("🤡"));
     assert!(stdout.contains("nc"));
     assert!(stdout.contains("setup-alias"));
     assert!(stdout.contains("YOLO mode"));
+    assert!(stdout.contains("-b, --br-huehuehue"));
 }
 
 #[test]
@@ -38,7 +39,7 @@ fn test_dry_run_without_openai_key() {
         .expect("Failed to execute dry-run command");
 
     let stderr = String::from_utf8(output.stderr).unwrap();
-    
+
     // Should fail with noob-friendly error about API key
     assert!(stderr.contains("forgot to set OPENAI_API_KEY"));
     assert!(stderr.contains("🔑"));
@@ -50,19 +51,19 @@ fn test_non_git_directory() {
     // Create a temporary directory outside of any git repo
     let temp_dir = std::env::temp_dir().join(format!("noob-commit-test-{}", std::process::id()));
     std::fs::create_dir_all(&temp_dir).unwrap();
-    
+
     // Make sure there's no .git directory
     if temp_dir.join(".git").exists() {
         std::fs::remove_dir_all(temp_dir.join(".git")).ok();
     }
-    
+
     // Use the binary directly instead of cargo run
     let binary_path = std::env::current_dir()
         .unwrap()
         .join("target")
         .join("debug")
         .join("noob-commit");
-    
+
     let output = Command::new(&binary_path)
         .args(&["--dry-run"])
         .current_dir(&temp_dir)
@@ -71,16 +72,20 @@ fn test_non_git_directory() {
         .expect("Failed to execute command");
 
     let stderr = String::from_utf8(output.stderr).unwrap();
-    
+
     // Should fail with noob-friendly error about not being in git repo OR no staged files
     // (depending on the git setup, it might detect as non-repo or no files)
-    let valid_errors = stderr.contains("isn't a git repo") || 
-                      stderr.contains("Nothing to commit") ||
-                      stderr.contains("🙈") || 
-                      stderr.contains("🤷");
-    
-    assert!(valid_errors, "Expected git repo error or no files error, got: {}", stderr);
-    
+    let valid_errors = stderr.contains("isn't a git repo")
+        || stderr.contains("Nothing to commit")
+        || stderr.contains("🙈")
+        || stderr.contains("🤷");
+
+    assert!(
+        valid_errors,
+        "Expected git repo error or no files error, got: {}",
+        stderr
+    );
+
     // Cleanup
     std::fs::remove_dir_all(&temp_dir).ok();
 }
@@ -102,21 +107,23 @@ mod cli_tests {
     fn test_all_flags_present() {
         let output = run_noob_commit(&["--help"]);
         let stdout = String::from_utf8(output.stdout).unwrap();
-        
+
         // Test all our custom flags are present
         let expected_flags = [
-            "--dry-run",
-            "--review", 
-            "--force",
-            "--ok-to-send-env",
-            "--no-push",
-            "--max-tokens",
-            "--model",
-            "--setup-alias",
-            "--yes-to-modules",
-            "--yes-to-crap"
+            "-d, --dry-run",
+            "-r, --review",
+            "-f, --force",
+            "-e, --ok-to-send-env",
+            "-p, --no-push",
+            "-t, --max-tokens",
+            "-m, --model",
+            "-s, --setup-alias",
+            "-M, --yes-to-modules",
+            "-c, --yes-to-crap",
+            "-b, --br-huehuehue",
+            "-a, --no-f-ads",
         ];
-        
+
         for flag in &expected_flags {
             assert!(stdout.contains(flag), "Missing flag: {}", flag);
         }
@@ -126,10 +133,10 @@ mod cli_tests {
     fn test_emoji_usage() {
         let output = run_noob_commit(&["--help"]);
         let stdout = String::from_utf8(output.stdout).unwrap();
-        
+
         // Test that we use emojis for fun
         let expected_emojis = ["🤡", "🔍", "✏️", "⚡", "🔓", "📦", "🤖", "🧠", "🛠️", "🗑️"];
-        
+
         for emoji in &expected_emojis {
             assert!(stdout.contains(emoji), "Missing emoji: {}", emoji);
         }
@@ -139,7 +146,7 @@ mod cli_tests {
     fn test_default_values() {
         let output = run_noob_commit(&["--help"]);
         let stdout = String::from_utf8(output.stdout).unwrap();
-        
+
         // Test default values are set correctly
         assert!(stdout.contains("gpt-4.1-mini"));
         assert!(stdout.contains("2000"));

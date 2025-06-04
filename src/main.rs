@@ -3,19 +3,19 @@ use async_openai::{
     types::{
         ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
         ChatCompletionRequestSystemMessageContent, ChatCompletionRequestUserMessage,
-        ChatCompletionRequestUserMessageContent, CreateChatCompletionRequestArgs, 
-        ChatCompletionTool, ChatCompletionToolType, FunctionObject,
+        ChatCompletionRequestUserMessageContent, ChatCompletionTool, ChatCompletionToolType,
+        CreateChatCompletionRequestArgs, FunctionObject,
     },
 };
 use clap::Parser;
 use clap_verbosity_flag::{InfoLevel, Verbosity};
 use log::{error, info};
+use noob_commit::CommitAdvice;
 use question::{Answer, Question};
 use rand::prelude::*;
-use schemars::SchemaGenerator;
 use schemars::generate::SchemaSettings;
+use schemars::SchemaGenerator;
 use spinners::{Spinner, Spinners};
-use noob_commit::CommitAdvice;
 use std::{
     env,
     fs::{self, OpenOptions},
@@ -35,6 +35,7 @@ struct Cli {
     verbose: Verbosity<InfoLevel>,
 
     #[arg(
+        short = 'd',
         long = "dry-run",
         help = "🔍 Just show me what commit message you'd create (for anxious devs)"
     )]
@@ -47,22 +48,29 @@ struct Cli {
     )]
     review: bool,
 
-    #[arg(short, long, help = "⚡ YOLO mode - just commit everything (living dangerously)")]
+    #[arg(
+        short,
+        long,
+        help = "⚡ YOLO mode - just commit everything (living dangerously)"
+    )]
     force: bool,
 
     #[arg(
+        short = 'e',
         long = "ok-to-send-env",
         help = "🔓 Include .env files (for when you want to leak your API keys like a pro)"
     )]
     ok_to_send_env: bool,
 
     #[arg(
+        short = 'p',
         long = "no-push",
         help = "📦 Commit but don't push (for commitment-phobic developers)"
     )]
     no_push: bool,
 
     #[arg(
+        short = 't',
         long = "max-tokens",
         help = "🤖 How much the AI can ramble (higher = more verbose commits)",
         default_value = "2000"
@@ -70,6 +78,7 @@ struct Cli {
     max_tokens: u16,
 
     #[arg(
+        short = 'm',
         long = "model",
         help = "🧠 Pick your AI overlord (gpt-4.1-mini is cheap and good enough)",
         default_value = "gpt-4.1-mini"
@@ -77,54 +86,72 @@ struct Cli {
     model: String,
 
     #[arg(
+        short = 's',
         long = "setup-alias",
         help = "🛠️ Setup 'nc' alias for easy access"
     )]
     setup_alias: bool,
 
     #[arg(
+        short = 'M',
         long = "yes-to-modules",
         help = "📦 Include dependency folders (node_modules, venv, etc) - WARNING: This will make your repo HUGE!"
     )]
     yes_to_modules: bool,
 
     #[arg(
+        short = 'c',
         long = "yes-to-crap",
         help = "🗑️ Include cache/build artifacts (__pycache__, .DS_Store, etc) - Not recommended!"
     )]
     yes_to_crap: bool,
+
+    #[arg(
+        short = 'b',
+        long = "br-huehuehue",
+        help = "🇧🇷 Output advice in Brazilian Portuguese with extra humor"
+    )]
+    br_huehuehue: bool,
+
+    #[arg(
+        short = 'a',
+        long = "no-f-ads",
+        help = "🙊 Disable the silly post-commit tagline",
+        default_value_t = false
+    )]
+    no_f_ads: bool,
 }
 
 fn setup_alias() -> Result<(), Box<dyn std::error::Error>> {
     println!("🤡 Setting up 'nc' alias for noob-commit...");
-    
+
     let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
     let shell_name = Path::new(&shell).file_name().unwrap().to_str().unwrap();
-    
+
     let config_file = match shell_name {
         "zsh" => {
             let mut path = env::var("HOME")?;
             path.push_str("/.zshrc");
             path
-        },
+        }
         "bash" => {
             let mut path = env::var("HOME")?;
             path.push_str("/.bashrc");
             path
-        },
+        }
         "fish" => {
             let mut path = env::var("HOME")?;
             path.push_str("/.config/fish/config.fish");
             path
-        },
+        }
         _ => {
             println!("⚠️  Unknown shell: {}. Please manually add 'alias nc=noob-commit' to your shell config.", shell_name);
             return Ok(());
         }
     };
-    
+
     let alias_line = "alias nc='noob-commit'";
-    
+
     // Check if alias already exists
     if let Ok(content) = fs::read_to_string(&config_file) {
         if content.contains("alias nc") || content.contains("nc='noob-commit'") {
@@ -132,19 +159,22 @@ fn setup_alias() -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
     }
-    
+
     // Add alias to config file
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
         .open(&config_file)?;
-    
+
     writeln!(file, "\n# Added by noob-commit")?;
     writeln!(file, "{}", alias_line)?;
-    
+
     println!("✅ Added 'nc' alias to {}", config_file);
-    println!("💡 Restart your terminal or run 'source {}' to use 'nc' command", config_file);
-    
+    println!(
+        "💡 Restart your terminal or run 'source {}' to use 'nc' command",
+        config_file
+    );
+
     Ok(())
 }
 
@@ -155,7 +185,7 @@ fn load_api_key() -> Result<String, String> {
             return Ok(key);
         }
     }
-    
+
     // If not in environment, try to load from .env file
     if let Ok(env_content) = fs::read_to_string(".env") {
         for line in env_content.lines() {
@@ -168,28 +198,29 @@ fn load_api_key() -> Result<String, String> {
             }
         }
     }
-    
+
     Err("🔑 Oops! You forgot to set OPENAI_API_KEY. Even noobs need API keys!\n💡 Get one at https://platform.openai.com/api-keys".to_string())
 }
 
 fn is_security_file(filename: &str) -> bool {
     // Only block exact security file names
-    matches!(filename, 
-        ".env" |
-        ".env.local" |
-        ".env.production" |
-        ".env.development" |
-        ".env.test" |
-        ".env.staging" |
-        ".npmrc" |
-        ".pypirc" |
-        "credentials" |
-        "secrets.yml" |
-        "secrets.yaml" |
-        "id_rsa" |
-        "id_ed25519" |
-        "id_ecdsa" |
-        "id_dsa"
+    matches!(
+        filename,
+        ".env"
+            | ".env.local"
+            | ".env.production"
+            | ".env.development"
+            | ".env.test"
+            | ".env.staging"
+            | ".npmrc"
+            | ".pypirc"
+            | "credentials"
+            | "secrets.yml"
+            | "secrets.yaml"
+            | "id_rsa"
+            | "id_ed25519"
+            | "id_ecdsa"
+            | "id_dsa"
     ) || filename.starts_with(".env.") && filename.ends_with(".local")
 }
 
@@ -197,7 +228,8 @@ fn is_module_directory(path: &str) -> bool {
     // Check if any part of the path contains common module/dependency directories
     let parts: Vec<&str> = path.split('/').collect();
     for part in parts {
-        if matches!(part,
+        if matches!(
+            part,
             "node_modules" |
             "venv" |
             ".venv" |
@@ -221,7 +253,7 @@ fn is_module_directory(path: &str) -> bool {
             "Pods" |    // iOS
             ".gradle" | // Android
             "build" |   // Various build systems
-            "dist"      // Distribution folders
+            "dist" // Distribution folders
         ) {
             return true;
         }
@@ -231,33 +263,38 @@ fn is_module_directory(path: &str) -> bool {
 
 fn is_crap_file(path: &str) -> bool {
     // Check if the path contains cache/build artifacts
-    let filename = Path::new(path).file_name()
+    let filename = Path::new(path)
+        .file_name()
         .and_then(|f| f.to_str())
         .unwrap_or("");
-    
+
     // Check exact filenames
-    if matches!(filename,
-        ".DS_Store" |
-        "Thumbs.db" |
-        "desktop.ini" |
-        ".gitkeep" |
-        ".keep"
+    if matches!(
+        filename,
+        ".DS_Store" | "Thumbs.db" | "desktop.ini" | ".gitkeep" | ".keep"
     ) {
         return true;
     }
-    
+
     // Check if it's an editor temp file
     if filename.ends_with(".swp") || filename.ends_with(".swo") || filename.ends_with(".swn") {
         return true;
     }
-    
+
     // Check if it's a backup/temp file
-    if filename.ends_with(".log") || filename.ends_with(".tmp") || filename.ends_with(".temp") ||
-       filename.ends_with(".cache") || filename.ends_with(".bak") || filename.ends_with(".backup") ||
-       filename.ends_with(".old") || filename.ends_with(".orig") || filename.ends_with("~") {
+    if filename.ends_with(".log")
+        || filename.ends_with(".tmp")
+        || filename.ends_with(".temp")
+        || filename.ends_with(".cache")
+        || filename.ends_with(".bak")
+        || filename.ends_with(".backup")
+        || filename.ends_with(".old")
+        || filename.ends_with(".orig")
+        || filename.ends_with("~")
+    {
         return true;
     }
-    
+
     // Check file extensions more carefully
     // We want to filter actual compiled/generated files, not files that happen to contain
     // these strings in their name (e.g., "demo.pyc" as a regular file name)
@@ -273,8 +310,11 @@ fn is_crap_file(path: &str) -> bool {
                     return true;
                 }
                 // Also filter if it's in a directory that suggests it's compiled
-                if path.contains("/build/") || path.contains("/dist/") || 
-                   path.contains("/.eggs/") || path.contains("/wheelhouse/") {
+                if path.contains("/build/")
+                    || path.contains("/dist/")
+                    || path.contains("/.eggs/")
+                    || path.contains("/wheelhouse/")
+                {
                     return true;
                 }
                 // For standalone .pyc files, we'll be conservative and filter them
@@ -283,32 +323,39 @@ fn is_crap_file(path: &str) -> bool {
                     return true;
                 }
                 return false;
-            },
+            }
             // Native libraries - be careful not to filter legitimate shared libraries
             "so" | "dylib" | "dll" => {
                 // Filter if it looks like a build artifact
-                return path.contains("/build/") || path.contains("/dist/") || 
-                       path.contains("/target/") || path.contains("/.libs/");
-            },
+                return path.contains("/build/")
+                    || path.contains("/dist/")
+                    || path.contains("/target/")
+                    || path.contains("/.libs/");
+            }
             // Java
-            "class" => return true,  // Java compiled files
+            "class" => return true, // Java compiled files
             "jar" => {
                 // JAR files in dependencies folders should be filtered
-                return path.contains("/lib/") || path.contains("/libs/") || 
-                       path.contains("/vendor/") || path.contains("/dependencies/");
-            },
+                return path.contains("/lib/")
+                    || path.contains("/libs/")
+                    || path.contains("/vendor/")
+                    || path.contains("/dependencies/");
+            }
             // C/C++ objects
             "o" | "a" => {
                 // Object files and archives are typically build artifacts
                 return true;
-            },
+            }
             // Windows executables
             "exe" => {
                 // Filter if in common build directories
-                return path.contains("/build/") || path.contains("/dist/") || 
-                       path.contains("/target/") || path.contains("/bin/") ||
-                       path.contains("/Debug/") || path.contains("/Release/");
-            },
+                return path.contains("/build/")
+                    || path.contains("/dist/")
+                    || path.contains("/target/")
+                    || path.contains("/bin/")
+                    || path.contains("/Debug/")
+                    || path.contains("/Release/");
+            }
             // Debug databases
             "idb" | "pdb" => return true,
             // Other build artifacts
@@ -316,28 +363,28 @@ fn is_crap_file(path: &str) -> bool {
             _ => {}
         }
     }
-    
+
     // Special handling for egg-info (it's a directory suffix, not a file extension)
     if filename.ends_with(".egg-info") || path.contains(".egg-info/") {
         return true;
     }
-    
+
     // Check if path contains cache directories
-    path.contains("/__pycache__/") ||
-    path.contains("/.pytest_cache/") ||
-    path.contains("/.mypy_cache/") ||
-    path.contains("/.ruff_cache/") ||
-    path.contains("/.sass-cache/") ||
-    path.contains("/.cache/") ||
-    path.contains("/.parcel-cache/") ||
-    path.contains("/.next/") ||
-    path.contains("/.nuxt/") ||
-    path.contains("/.docusaurus/") ||
-    path.contains("/.serverless/") ||
-    path.contains("/.fusebox/") ||
-    path.contains("/.dynamodb/") ||
-    path.contains("/.tern-port") ||
-    path.contains("/.yarn-integrity")
+    path.contains("/__pycache__/")
+        || path.contains("/.pytest_cache/")
+        || path.contains("/.mypy_cache/")
+        || path.contains("/.ruff_cache/")
+        || path.contains("/.sass-cache/")
+        || path.contains("/.cache/")
+        || path.contains("/.parcel-cache/")
+        || path.contains("/.next/")
+        || path.contains("/.nuxt/")
+        || path.contains("/.docusaurus/")
+        || path.contains("/.serverless/")
+        || path.contains("/.fusebox/")
+        || path.contains("/.dynamodb/")
+        || path.contains("/.tern-port")
+        || path.contains("/.yarn-integrity")
 }
 
 #[tokio::main]
@@ -385,23 +432,23 @@ async fn main() -> Result<(), ()> {
         .arg(".")
         .output()
         .expect("Failed to add files");
-    
+
     // Get list of all files in the repository
     let all_files_output = Command::new("git")
         .arg("ls-files")
         .arg("--cached")
         .output()
         .expect("Failed to list git files");
-    
+
     let all_files = str::from_utf8(&all_files_output.stdout).unwrap();
     let mut unstaged_security = false;
     let mut unstaged_modules = false;
     let mut unstaged_crap = false;
-    
+
     for file_path in all_files.lines() {
         let mut should_unstage = false;
         let mut reason = "";
-        
+
         // Check security files
         if !cli.ok_to_send_env {
             if let Some(filename) = Path::new(file_path).file_name() {
@@ -414,52 +461,58 @@ async fn main() -> Result<(), ()> {
                 }
             }
         }
-        
+
         // Check module directories
         if !cli.yes_to_modules && is_module_directory(file_path) {
             should_unstage = true;
             reason = "dependency/module folder";
             unstaged_modules = true;
         }
-        
+
         // Check crap files
         if !cli.yes_to_crap && is_crap_file(file_path) {
             should_unstage = true;
             reason = "cache/build artifact";
             unstaged_crap = true;
         }
-        
+
         if should_unstage {
-            info!("🛡️  Protecting {} ({}): {}", reason, 
-                if reason == "security file" { "use --ok-to-send-env to include" }
-                else if reason == "dependency/module folder" { "use --yes-to-modules to include" }
-                else { "use --yes-to-crap to include" },
+            info!(
+                "🛡️  Protecting {} ({}): {}",
+                reason,
+                if reason == "security file" {
+                    "use --ok-to-send-env to include"
+                } else if reason == "dependency/module folder" {
+                    "use --yes-to-modules to include"
+                } else {
+                    "use --yes-to-crap to include"
+                },
                 file_path
             );
-            
+
             let unstage_result = Command::new("git")
                 .arg("reset")
                 .arg("HEAD")
                 .arg(file_path)
                 .output();
-            
+
             if let Err(e) = unstage_result {
                 error!("⚠️  Failed to unstage {}: {}", file_path, e);
             }
         }
     }
-    
+
     // Show summary messages
     if unstaged_security {
         info!("🔒 Unstaged security files to protect your secrets!");
         info!("💡 Use --ok-to-send-env if you really want to include them (not recommended)");
     }
-    
+
     if unstaged_modules {
         info!("📦 Unstaged dependency folders to keep your repo size reasonable!");
         info!("💡 Use --yes-to-modules if you really want to include them (repo will be HUGE!)");
     }
-    
+
     if unstaged_crap {
         info!("🗑️  Unstaged cache/build artifacts to keep your repo clean!");
         info!("💡 Use --yes-to-crap if you really want to include them (not recommended)");
@@ -536,33 +589,40 @@ async fn main() -> Result<(), ()> {
 
     let commit_schema = generator.subschema_for::<CommitAdvice>();
 
+    let mut system_prompt = "You are an experienced programmer who writes great commit messages. Analyze the git diff and return JSON with a 'message' for the noob developer and a 'commit' containing title and description. If you find any API keys, mention 'WARNING!!! API_KEY DETECTED IN THIS PART' in the message.".to_string();
+    if cli.br_huehuehue {
+        system_prompt.push_str(" Respond in Brazilian Portuguese with a playful tone and add 'huehuehue' when it makes sense.");
+    }
+
     let completion = client
         .chat()
         .create(
             CreateChatCompletionRequestArgs::default()
                 .messages(vec![
                     ChatCompletionRequestMessage::System(ChatCompletionRequestSystemMessage {
-                        content: ChatCompletionRequestSystemMessageContent::Text(
-                            "You are an experienced programmer who writes great commit messages. Analyze the git diff and return JSON with a 'message' for the noob developer and a 'commit' containing title and description. If you find any API keys, mention 'WARNING!!! API_KEY DETECTED IN THIS PART' in the message.".to_string()
-                        ),
+                        content: ChatCompletionRequestSystemMessageContent::Text(system_prompt),
                         name: None,
                     }),
                     ChatCompletionRequestMessage::User(ChatCompletionRequestUserMessage {
-                        content: ChatCompletionRequestUserMessageContent::Text(format!("Here's the git diff:\n{}", output)),
+                        content: ChatCompletionRequestUserMessageContent::Text(format!(
+                            "Here's the git diff:\n{}",
+                            output
+                        )),
                         name: None,
                     }),
                 ])
-                .tools(vec![
-                    ChatCompletionTool {
-                        r#type: ChatCompletionToolType::Function,
-                        function: FunctionObject {
-                            name: "commit".to_string(),
-                            description: Some("Returns a message for the developer and a structured commit.".to_string()),
-                            parameters: Some(serde_json::to_value(commit_schema).unwrap()),
-                            strict: Some(false),
-                        },
+                .tools(vec![ChatCompletionTool {
+                    r#type: ChatCompletionToolType::Function,
+                    function: FunctionObject {
+                        name: "commit".to_string(),
+                        description: Some(
+                            "Returns a message for the developer and a structured commit."
+                                .to_string(),
+                        ),
+                        parameters: Some(serde_json::to_value(commit_schema).unwrap()),
+                        strict: Some(false),
                     },
-                ])
+                }])
                 .tool_choice("commit".to_string())
                 .model(&cli.model)
                 .temperature(0.0)
@@ -648,7 +708,7 @@ async fn main() -> Result<(), ()> {
             .arg("push")
             .output()
             .expect("Failed to push to remote");
-        
+
         if push_output.status.success() {
             info!("🚀 Pushed to remote! Your code is now bothering other developers.");
         } else {
@@ -657,6 +717,9 @@ async fn main() -> Result<(), ()> {
         }
     }
 
+    if !cli.no_f_ads {
+        info!("One more noob commit by arthrod/noob-commit 🤡");
+    }
+
     Ok(())
 }
-// Test change
