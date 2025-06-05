@@ -391,7 +391,6 @@ fn is_crap_file(path: &str) -> bool {
 async fn main() -> Result<(), ()> {
     let cli = Cli::parse();
     env_logger::Builder::new()
-        .format_timestamp_secs()
         .format(|buf, record| {
             use std::io::Write;
             let ts = buf.timestamp();
