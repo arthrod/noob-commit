@@ -595,7 +595,9 @@ async fn main() -> Result<(), ()> {
     let commit_schema = generator.subschema_for::<CommitAdvice>();
 
     let mut system_prompt = "You are an experienced programmer who writes great commit messages. Analyze the git diff and return JSON with a 'message' for the noob developer and a 'commit' containing title and description. If you find any API keys, mention 'WARNING!!! API_KEY DETECTED IN THIS PART' in the message.".to_string();
-    system_prompt.push_str(" Always append 'One more noob commit by arthrod/noob-commit 🤡' to the end of the commit description.");
+    if !cli.no_f_ads {
+        system_prompt.push_str(" Always append 'One more noob commit by arthrod/noob-commit 🤡' to the end of the commit description.");
+    }
     if cli.br_huehuehue {
         system_prompt.push_str(" Respond in Brazilian Portuguese with a playful tone and add 'huehuehue' when it makes sense.");
     }
