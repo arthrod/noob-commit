@@ -92,6 +92,15 @@ noob-commit --model gpt-4
 
 # Let me edit the AI's commit message
 noob-commit --review
+
+# Limit the git diff size sent to AI (useful for huge diffs)
+noob-commit --max-input-chars 10000
+
+# Send full diff without any truncation
+noob-commit --max-input-chars 0
+
+# Update to the latest version
+noob-commit --update
 ```
 
 ### Examples 💡
@@ -148,6 +157,7 @@ nc -b
 - 🛡️ **Smart security filtering** - Protects .env, credentials, secrets, SSH keys
 - 📦 **Dependency folder filtering** - Keeps node_modules, venv, vendor out
 - 🗑️ **Build artifact filtering** - No more __pycache__, .DS_Store, *.pyc
+- ✂️ **Input size limiting** - Truncate huge diffs to save API costs
 - ⚡ **One command workflow** - Add, commit, push in one go
 - 🔑 **Flexible API key loading** - From environment or .env file
 - 🎭 **Self-deprecating humor** - Because we're all noobs sometimes
@@ -161,18 +171,21 @@ All the knobs you might want to turn:
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-m, --model` | AI model to use | `gpt-4.1-mini` |
-| `-t, --max-tokens` | How much the AI can ramble | `2000` |
-| `-d, --dry-run` | Just show what would happen | `false` |
-| `-f, --force` | Skip confirmations | `false` |
-| `-r, --review` | Edit AI's message | `false` |
-| `-e, --ok-to-send-env` | Include .env files | `false` |
-| `-M, --yes-to-modules` | Include dependency folders | `false` |
-| `-c, --yes-to-crap` | Include build artifacts | `false` |
-| `-b, --br-huehuehue` | Output advice in Brazilian Portuguese | `false` |
-| `-a, --no-f-ads` | Disable the silly post-commit tagline | `false` |
-| `-p, --no-push` | Don't push to remote | `false` |
-| `-s, --setup-alias` | Setup 'nc' alias | - |
+| `-m, --model` | 🧠 AI model to use | `gpt-4.1-mini` |
+| `-t, --max-tokens` | 🤖 How much the AI can ramble (output tokens) | `2000` |
+| `-i, --max-input-chars` | ✂️ Maximum characters of git diff to send to AI (0 = unlimited) | `50000` |
+| `-d, --dry-run` | 🔍 Just show what would happen | `false` |
+| `-f, --force` | ⚡ Skip confirmations (YOLO mode) | `false` |
+| `-r, --review` | ✏️ Edit AI's message before committing | `false` |
+| `-e, --ok-to-send-env` | 🔓 Include .env files (dangerous!) | `false` |
+| `-M, --yes-to-modules` | 📦 Include dependency folders (huge repo!) | `false` |
+| `-c, --yes-to-crap` | 🗑️ Include build artifacts | `false` |
+| `-b, --br-huehuehue` | 🇧🇷 Output advice in Brazilian Portuguese | `false` |
+| `-a, --no-f-ads` | 🙊 Disable the silly post-commit tagline | `false` |
+| `-p, --no-push` | 📦 Commit but don't push | `false` |
+| `-s, --setup-alias` | 🛠️ Setup 'nc' alias | - |
+| `-u, --update` | 🚀 Update noob-commit to the latest version | - |
+| `-v, --verbose` | 📢 Increase verbosity (can be used multiple times) | - |
 
 ### What Gets Filtered? 🚫
 
@@ -281,6 +294,12 @@ noob-commit --model gpt-4
 
 # Deixa eu editar a mensagem da IA
 noob-commit --review
+
+# Limitar o tamanho do diff enviado pra IA (útil para diffs gigantes)
+noob-commit --max-input-chars 10000
+
+# Enviar o diff completo sem truncar
+noob-commit --max-input-chars 0
 ```
 
 ### Recursos 🔥
@@ -289,6 +308,7 @@ noob-commit --review
 - 🛡️ **Filtragem inteligente de segurança** - Protege .env, credentials, secrets, chaves SSH
 - 📦 **Filtragem de pastas de dependências** - Mantém node_modules, venv, vendor fora
 - 🗑️ **Filtragem de artefatos de build** - Sem mais __pycache__, .DS_Store, *.pyc
+- ✂️ **Limitação de tamanho de entrada** - Trunca diffs gigantes para economizar na API
 - ⚡ **Fluxo de um comando só** - Add, commit, push de uma vez
 - 🔑 **Carregamento flexível de API key** - Do ambiente ou arquivo .env
 - 🎭 **Humor autodepreciativo** - Porque todos somos noobs às vezes

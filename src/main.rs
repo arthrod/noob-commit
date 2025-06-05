@@ -78,6 +78,14 @@ struct Cli {
     max_tokens: u16,
 
     #[arg(
+        short = 'i',
+        long = "max-input-chars",
+        help = "✂️ Maximum characters of git diff to send to AI (0 = unlimited)",
+        default_value = "50000"
+    )]
+    max_input_chars: usize,
+
+    #[arg(
         short = 'm',
         long = "model",
         help = "🧠 Pick your AI overlord (gpt-4.1-mini is cheap and good enough)",
@@ -120,6 +128,13 @@ struct Cli {
         default_value_t = false
     )]
     no_f_ads: bool,
+
+    #[arg(
+        short = 'u',
+        long = "update",
+        help = "🚀 Update noob-commit to the latest version"
+    )]
+    update: bool,
 }
 
 fn setup_alias() -> Result<(), Box<dyn std::error::Error>> {
@@ -410,6 +425,27 @@ async fn main() -> Result<(), ()> {
         }
     }
 
+    // Handle update
+    if cli.update {
+        info!("🚀 Updating noob-commit to the latest version...");
+        
+        let update_output = Command::new("cargo")
+            .args(&["install", "noob-commit", "--force"])
+            .output()
+            .expect("Failed to run cargo install");
+        
+        if update_output.status.success() {
+            info!("✅ Successfully updated noob-commit!");
+            info!("🎉 You're now running the latest version!");
+            return Ok(());
+        } else {
+            let stderr = str::from_utf8(&update_output.stderr).unwrap();
+            error!("😬 Failed to update: {}", stderr);
+            error!("💡 Try running: cargo install noob-commit --force");
+            std::process::exit(1);
+        }
+    }
+
     let api_token = match load_api_key() {
         Ok(key) => key,
         Err(msg) => {
@@ -545,7 +581,14 @@ async fn main() -> Result<(), ()> {
         .output()
         .expect("Couldn't find diff.")
         .stdout;
-    let output = str::from_utf8(&output).unwrap();
+    let mut output = str::from_utf8(&output).unwrap().to_string();
+    
+    // Trim the git diff if it exceeds max_input_chars
+    if cli.max_input_chars > 0 && output.len() > cli.max_input_chars {
+        info!("✂️  Trimming git diff from {} to {} characters", output.len(), cli.max_input_chars);
+        output.truncate(cli.max_input_chars);
+        output.push_str("\n... (diff truncated due to size limit)");
+    }
 
     if !cli.dry_run {
         info!("Loading Data...");
