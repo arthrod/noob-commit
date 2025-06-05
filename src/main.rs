@@ -391,6 +391,11 @@ fn is_crap_file(path: &str) -> bool {
 async fn main() -> Result<(), ()> {
     let cli = Cli::parse();
     env_logger::Builder::new()
+        .format(|buf, record| {
+            use std::io::Write;
+            let ts = buf.timestamp();
+            writeln!(buf, "[{}][noob-commit] {}", ts, record.args())
+        })
         .filter_level(cli.verbose.log_level_filter())
         .init();
 
@@ -590,6 +595,9 @@ async fn main() -> Result<(), ()> {
     let commit_schema = generator.subschema_for::<CommitAdvice>();
 
     let mut system_prompt = "You are an experienced programmer who writes great commit messages. Analyze the git diff and return JSON with a 'message' for the noob developer and a 'commit' containing title and description. If you find any API keys, mention 'WARNING!!! API_KEY DETECTED IN THIS PART' in the message.".to_string();
+    if !cli.no_f_ads {
+        system_prompt.push_str(" Always append 'One more noob commit by arthrod/noob-commit 🤡' to the end of the commit description.");
+    }
     if cli.br_huehuehue {
         system_prompt.push_str(" Respond in Brazilian Portuguese with a playful tone and add 'huehuehue' when it makes sense.");
     }
@@ -653,15 +661,12 @@ async fn main() -> Result<(), ()> {
     };
 
     if cli.dry_run {
-        info!("{}", commit_msg);
-        info!("{}", noob_msg);
+        info!("----- COMMIT -----\n{}", commit_msg);
+        info!("----- MODEL MESSAGE -----\n{}", noob_msg);
         return Ok(());
     } else {
-        info!(
-            "Proposed Commit:\n------------------------------\n{}\n------------------------------",
-            commit_msg
-        );
-        info!("Advice: {}", noob_msg);
+        info!("----- COMMIT -----\n{}", commit_msg);
+        info!("----- MODEL MESSAGE -----\n{}", noob_msg);
 
         if !cli.force {
             let answer = Question::new("Do you want to continue? (Y/n)")
