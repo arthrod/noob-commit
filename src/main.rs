@@ -220,10 +220,10 @@ fn load_api_key() -> Result<String, String> {
 fn is_security_file(filename: &str) -> bool {
     // Treat any .env file as a security file unless it's the special
     // `.env.otherthings` which is explicitly allowed.
-    if filename.starts_with(".env") && filename != ".env.otherthings" {
+    let fname = filename.to_ascii_lowercase();
+    if fname.starts_with(".env") && fname != ".env.otherthings" {
         return true;
     }
-
     matches!(
         filename,
         ".npmrc"
