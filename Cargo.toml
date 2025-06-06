@@ -24,6 +24,7 @@ log = { version = "0.4.8", features = ["std"] }
 tokio = { version = "1.28.2", features = ["full"] }
 clap = { version = "4.0.18", features = ["derive"] }
 async-openai = { version = "0.28.2", default-features = false, features = ["native-tls"] }
+tiktoken-rs = { version = "0.7", features = ["async-openai"] }
 
 [lib]
 name = "noob_commit"

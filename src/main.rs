@@ -81,7 +81,7 @@ struct Cli {
         short = 'i',
         long = "max-input-chars",
         help = "✂️ Maximum characters of git diff to send to AI (0 = unlimited)",
-        default_value = "50000"
+        default_value = "200000"
     )]
     max_input_chars: usize,
 
@@ -218,16 +218,15 @@ fn load_api_key() -> Result<String, String> {
 }
 
 fn is_security_file(filename: &str) -> bool {
-    // Only block exact security file names
+    // Treat any .env file as a security file unless it's the special
+    // `.env.otherthings` which is explicitly allowed.
+    let fname = filename.to_ascii_lowercase();
+    if fname.starts_with(".env") && fname != ".env.otherthings" {
+        return true;
+    }
     matches!(
         filename,
-        ".env"
-            | ".env.local"
-            | ".env.production"
-            | ".env.development"
-            | ".env.test"
-            | ".env.staging"
-            | ".npmrc"
+        ".npmrc"
             | ".pypirc"
             | "credentials"
             | "secrets.yml"
@@ -236,7 +235,7 @@ fn is_security_file(filename: &str) -> bool {
             | "id_ed25519"
             | "id_ecdsa"
             | "id_dsa"
-    ) || filename.starts_with(".env.") && filename.ends_with(".local")
+    )
 }
 
 fn is_module_directory(path: &str) -> bool {
@@ -428,12 +427,12 @@ async fn main() -> Result<(), ()> {
     // Handle update
     if cli.update {
         info!("🚀 Updating noob-commit to the latest version...");
-        
+
         let update_output = Command::new("cargo")
             .args(&["install", "noob-commit", "--force"])
             .output()
             .expect("Failed to run cargo install");
-        
+
         if update_output.status.success() {
             info!("✅ Successfully updated noob-commit!");
             info!("🎉 You're now running the latest version!");
@@ -582,10 +581,14 @@ async fn main() -> Result<(), ()> {
         .expect("Couldn't find diff.")
         .stdout;
     let mut output = str::from_utf8(&output).unwrap().to_string();
-    
+
     // Trim the git diff if it exceeds max_input_chars
     if cli.max_input_chars > 0 && output.len() > cli.max_input_chars {
-        info!("✂️  Trimming git diff from {} to {} characters", output.len(), cli.max_input_chars);
+        info!(
+            "✂️  Trimming git diff from {} to {} characters",
+            output.len(),
+            cli.max_input_chars
+        );
         output.truncate(cli.max_input_chars);
         output.push_str("\n... (diff truncated due to size limit)");
     }
@@ -637,7 +640,7 @@ async fn main() -> Result<(), ()> {
 
     let commit_schema = generator.subschema_for::<CommitAdvice>();
 
-    let mut system_prompt = "You are an experienced programmer who writes great commit messages. Analyze the git diff and return JSON with a 'message' for the noob developer and a 'commit' containing title and description. If you find any API keys, mention 'WARNING!!! API_KEY DETECTED IN THIS PART' in the message.".to_string();
+    let mut system_prompt = "You are an experienced programmer who writes great commit messages. Analyze the git diff and return JSON with a 'message' for the noob developer and a 'commit' containing title and description. If you find any API keys or secrets that are not obvious placeholders like 'dummy' or 'example', mention which file contains it in the developer message.".to_string();
     if !cli.no_f_ads {
         system_prompt.push_str(" Always append 'One more noob commit by arthrod/noob-commit 🤡' to the end of the commit description.");
     }
@@ -645,23 +648,51 @@ async fn main() -> Result<(), ()> {
         system_prompt.push_str(" Respond in Brazilian Portuguese with a playful tone and add 'huehuehue' when it makes sense.");
     }
 
+    let messages = vec![
+        ChatCompletionRequestMessage::System(ChatCompletionRequestSystemMessage {
+            content: ChatCompletionRequestSystemMessageContent::Text(system_prompt.clone()),
+            name: None,
+        }),
+        ChatCompletionRequestMessage::User(ChatCompletionRequestUserMessage {
+            content: ChatCompletionRequestUserMessageContent::Text(format!(
+                "Here's the git diff:\n{}",
+                output
+            )),
+            name: None,
+        }),
+    ];
+
+    let tk_messages = vec![
+        tiktoken_rs::ChatCompletionRequestMessage {
+            role: "system".to_string(),
+            content: Some(system_prompt.clone()),
+            name: None,
+            function_call: None,
+        },
+        tiktoken_rs::ChatCompletionRequestMessage {
+            role: "user".to_string(),
+            content: Some(format!("Here's the git diff:\n{}", output)),
+            name: None,
+            function_call: None,
+        },
+    ];
+
+    let allowed_max_tokens = match tiktoken_rs::get_chat_completion_max_tokens(&cli.model, &tk_messages) {
+        Ok(tokens) => tokens,
+        Err(e) => {
+            info!(
+                "⚠️ Failed to calculate max tokens with tiktoken-rs for model '{}': {}. Falling back to user-defined max_tokens ({}).",
+                &cli.model, e, cli.max_tokens
+            );
+            cli.max_tokens as usize
+        }
+    };
+
     let completion = client
         .chat()
         .create(
             CreateChatCompletionRequestArgs::default()
-                .messages(vec![
-                    ChatCompletionRequestMessage::System(ChatCompletionRequestSystemMessage {
-                        content: ChatCompletionRequestSystemMessageContent::Text(system_prompt),
-                        name: None,
-                    }),
-                    ChatCompletionRequestMessage::User(ChatCompletionRequestUserMessage {
-                        content: ChatCompletionRequestUserMessageContent::Text(format!(
-                            "Here's the git diff:\n{}",
-                            output
-                        )),
-                        name: None,
-                    }),
-                ])
+                .messages(messages)
                 .tools(vec![ChatCompletionTool {
                     r#type: ChatCompletionToolType::Function,
                     function: FunctionObject {
@@ -677,7 +708,7 @@ async fn main() -> Result<(), ()> {
                 .tool_choice("commit".to_string())
                 .model(&cli.model)
                 .temperature(0.0)
-                .max_tokens(cli.max_tokens)
+                .max_tokens(std::cmp::min(cli.max_tokens as usize, allowed_max_tokens) as u16)
                 .build()
                 .unwrap(),
         )
