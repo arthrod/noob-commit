@@ -677,8 +677,16 @@ async fn main() -> Result<(), ()> {
         },
     ];
 
-    let allowed_max_tokens = tiktoken_rs::get_chat_completion_max_tokens(&cli.model, &tk_messages)
-        .unwrap_or(cli.max_tokens as usize);
+    let allowed_max_tokens = match tiktoken_rs::get_chat_completion_max_tokens(&cli.model, &tk_messages) {
+        Ok(tokens) => tokens,
+        Err(e) => {
+            info!(
+                "⚠️ Failed to calculate max tokens with tiktoken-rs for model '{}': {}. Falling back to user-defined max_tokens ({}).",
+                &cli.model, e, cli.max_tokens
+            );
+            cli.max_tokens as usize
+        }
+    };
 
     let completion = client
         .chat()
