@@ -88,7 +88,7 @@ noob-commit -b
 noob-commit --no-push
 
 # Use a different AI model
-noob-commit --model gpt-4
+noob-commit --model gpt-4.1-nano
 
 # Let me edit the AI's commit message
 noob-commit --review
@@ -171,7 +171,7 @@ All the knobs you might want to turn:
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-m, --model` | 🧠 AI model to use | `gpt-4.1-mini` |
+| `-m, --model` | 🧠 AI model to use | `gpt-4.1-nano` |
 | `-t, --max-tokens` | 🤖 How much the AI can ramble (output tokens) | `2000` |
 | `-i, --max-input-chars` | ✂️ Maximum characters of git diff to send to AI (0 = unlimited) | `50000` |
 | `-d, --dry-run` | 🔍 Just show what would happen | `false` |
@@ -290,7 +290,7 @@ noob-commit --ok-to-send-env
 noob-commit --no-push
 
 # Usar um modelo de IA diferente
-noob-commit --model gpt-4
+noob-commit --model gpt-4.1-nano
 
 # Deixa eu editar a mensagem da IA
 noob-commit --review

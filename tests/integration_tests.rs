@@ -153,7 +153,7 @@ mod cli_tests {
         let stdout = String::from_utf8(output.stdout).unwrap();
 
         // Test default values are set correctly
-        assert!(stdout.contains("gpt-4.1-mini"));
+        assert!(stdout.contains("gpt-4.1-nano"));
         assert!(stdout.contains("2000"));
         assert!(stdout.contains("50000")); // Default max-input-chars
     }

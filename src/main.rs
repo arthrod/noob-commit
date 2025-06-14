@@ -7,7 +7,9 @@ use async_openai::{
         CreateChatCompletionRequestArgs, FunctionObject,
     },
 };
+use chrono::Local;
 use clap::Parser;
+use tiktoken_rs::cl100k_base;
 use clap_verbosity_flag::{InfoLevel, Verbosity};
 use log::{error, info};
 use noob_commit::CommitAdvice;
@@ -19,7 +21,7 @@ use spinners::{Spinner, Spinners};
 use std::{
     env,
     fs::{self, OpenOptions},
-    io::Write,
+    io::{self, Write},
     path::Path,
     process::{Command, Stdio},
     str,
@@ -88,8 +90,8 @@ struct Cli {
     #[arg(
         short = 'm',
         long = "model",
-        help = "🧠 Pick your AI overlord (gpt-4.1-mini is cheap and good enough)",
-        default_value = "gpt-4.1-mini"
+        help = "🧠 Pick your AI overlord (gpt-4.1-nano is fast and efficient)",
+        default_value = "gpt-4.1-nano"
     )]
     model: String,
 
@@ -217,12 +219,21 @@ fn load_api_key() -> Result<String, String> {
     Err("🔑 Oops! You forgot to set OPENAI_API_KEY. Even noobs need API keys!\n💡 Get one at https://platform.openai.com/api-keys".to_string())
 }
 
-fn is_security_file(filename: &str) -> bool {
-    // Only block exact security file names
+fn is_security_file(file_path: &str) -> bool {
+    let filename = Path::new(file_path)
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or("");
+
+    // Block .env files anywhere in the directory structure
+    if filename == ".env" || filename.starts_with(".env.") {
+        return true;
+    }
+
+    // Block other security files
     matches!(
         filename,
-        ".env"
-            | ".env.local"
+        ".env.local"
             | ".env.production"
             | ".env.development"
             | ".env.test"
@@ -236,7 +247,7 @@ fn is_security_file(filename: &str) -> bool {
             | "id_ed25519"
             | "id_ecdsa"
             | "id_dsa"
-    ) || filename.starts_with(".env.") && filename.ends_with(".local")
+    ) || (filename.starts_with(".env.") && filename.ends_with(".local"))
 }
 
 fn is_module_directory(path: &str) -> bool {
@@ -408,8 +419,17 @@ async fn main() -> Result<(), ()> {
     env_logger::Builder::new()
         .format(|buf, record| {
             use std::io::Write;
-            let ts = buf.timestamp();
-            writeln!(buf, "[{}][noob-commit] {}", ts, record.args())
+            let ts = Local::now().format("%Y-%m-%d %H:%M:%S");
+            
+            let level_icon = match record.level() {
+                log::Level::Error => "❌",
+                log::Level::Warn => "⚠️ ",
+                log::Level::Info => "✨",
+                log::Level::Debug => "🔍",
+                log::Level::Trace => "📝",
+            };
+            
+            writeln!(buf, "{} {} {}", level_icon, ts, record.args())
         })
         .filter_level(cli.verbose.log_level_filter())
         .init();
@@ -491,16 +511,10 @@ async fn main() -> Result<(), ()> {
         let mut reason = "";
 
         // Check security files
-        if !cli.ok_to_send_env {
-            if let Some(filename) = Path::new(file_path).file_name() {
-                if let Some(filename_str) = filename.to_str() {
-                    if is_security_file(filename_str) {
-                        should_unstage = true;
-                        reason = "security file";
-                        unstaged_security = true;
-                    }
-                }
-            }
+        if !cli.ok_to_send_env && is_security_file(file_path) {
+            should_unstage = true;
+            reason = "security file";
+            unstaged_security = true;
         }
 
         // Check module directories
@@ -518,18 +532,12 @@ async fn main() -> Result<(), ()> {
         }
 
         if should_unstage {
-            info!(
-                "🛡️  Protecting {} ({}): {}",
-                reason,
-                if reason == "security file" {
-                    "use --ok-to-send-env to include"
-                } else if reason == "dependency/module folder" {
-                    "use --yes-to-modules to include"
-                } else {
-                    "use --yes-to-crap to include"
-                },
-                file_path
-            );
+            let flag_hint = match reason {
+                "security file" => "--ok-to-send-env",
+                "dependency/module folder" => "--yes-to-modules",
+                _ => "--yes-to-crap"
+            };
+            info!("Excluding {}: {} (use {} to include)", reason, file_path, flag_hint);
 
             let unstage_result = Command::new("git")
                 .arg("reset")
@@ -544,19 +552,21 @@ async fn main() -> Result<(), ()> {
     }
 
     // Show summary messages
-    if unstaged_security {
-        info!("🔒 Unstaged security files to protect your secrets!");
-        info!("💡 Use --ok-to-send-env if you really want to include them (not recommended)");
-    }
-
-    if unstaged_modules {
-        info!("📦 Unstaged dependency folders to keep your repo size reasonable!");
-        info!("💡 Use --yes-to-modules if you really want to include them (repo will be HUGE!)");
-    }
-
-    if unstaged_crap {
-        info!("🗑️  Unstaged cache/build artifacts to keep your repo clean!");
-        info!("💡 Use --yes-to-crap if you really want to include them (not recommended)");
+    if unstaged_security || unstaged_modules || unstaged_crap {
+        println!("\n{}", "─".repeat(60));
+        if unstaged_security {
+            println!("🔒 Protected security files");
+            println!("   → Use --ok-to-send-env to include (not recommended)");
+        }
+        if unstaged_modules {
+            println!("📦 Excluded dependency folders");
+            println!("   → Use --yes-to-modules to include (large files)");
+        }
+        if unstaged_crap {
+            println!("🗑️  Excluded build artifacts");
+            println!("   → Use --yes-to-crap to include (not recommended)");
+        }
+        println!("{}", "─".repeat(60));
     }
 
     let git_staged_cmd = Command::new("git")
@@ -583,15 +593,32 @@ async fn main() -> Result<(), ()> {
         .stdout;
     let mut output = str::from_utf8(&output).unwrap().to_string();
     
+    // Count tokens and optionally trim the git diff
+    let bpe = cl100k_base().unwrap();
+    let tokens = bpe.encode_with_special_tokens(&output);
+    let token_count = tokens.len();
+    
+    if cli.verbose.log_level().is_some() {
+        info!("Git diff: {} characters, {} tokens", output.len(), token_count);
+    }
+    
     // Trim the git diff if it exceeds max_input_chars
     if cli.max_input_chars > 0 && output.len() > cli.max_input_chars {
-        info!("✂️  Trimming git diff from {} to {} characters", output.len(), cli.max_input_chars);
+        if cli.verbose.log_level().is_some() {
+            info!("✂️  Trimming git diff from {} to {} characters", output.len(), cli.max_input_chars);
+        }
         output.truncate(cli.max_input_chars);
         output.push_str("\n... (diff truncated due to size limit)");
+        
+        // Recount tokens after truncation
+        let new_tokens = bpe.encode_with_special_tokens(&output);
+        if cli.verbose.log_level().is_some() {
+            info!("After truncation: {} characters, {} tokens", output.len(), new_tokens.len());
+        }
     }
 
-    if !cli.dry_run {
-        info!("Loading Data...");
+    if !cli.dry_run && cli.verbose.is_silent() {
+        println!("\n🤖 Analyzing your changes...");
     }
 
     let sp: Option<Spinner> = if !cli.dry_run && cli.verbose.is_silent() {
@@ -625,7 +652,7 @@ async fn main() -> Result<(), ()> {
         let mut rng = rand::rng();
         let spinner = vs.choose(&mut rng).unwrap().clone();
 
-        Some(Spinner::new(spinner, "Analyzing Codebase...".into()))
+        Some(Spinner::new(spinner, "AI is thinking...".into()))
     } else {
         None
     };
@@ -637,7 +664,17 @@ async fn main() -> Result<(), ()> {
 
     let commit_schema = generator.subschema_for::<CommitAdvice>();
 
-    let mut system_prompt = "You are an experienced programmer who writes great commit messages. Analyze the git diff and return JSON with a 'message' for the noob developer and a 'commit' containing title and description. If you find any API keys, mention 'WARNING!!! API_KEY DETECTED IN THIS PART' in the message.".to_string();
+    let mut system_prompt = "You are an experienced programmer who writes great commit messages. Analyze the git diff and call the commit function with exactly these fields: 'message' (string for the developer) and 'commit' object containing 'title' (string) and 'description' (string). IMPORTANT: Use each field name exactly once - no duplicates. 
+
+CRITICAL SECURITY CHECK: Carefully scan the diff for actual API keys, tokens, passwords, or secrets (not just variable names or comments). Look for patterns like:
+- OpenAI API keys (sk-...)
+- AWS keys (AKIA...)
+- JWT tokens
+- Database passwords
+- Private keys
+- Auth tokens
+
+If you detect ACTUAL secrets (not just references), respond with: 'CRITICAL: API KEY/SECRET DETECTED in file [filename] - DO NOT COMMIT! The secret appears to be: [type of secret]' in the message field.".to_string();
     if !cli.no_f_ads {
         system_prompt.push_str(" Always append 'One more noob commit by arthrod/noob-commit 🤡' to the end of the commit description.");
     }
@@ -685,14 +722,20 @@ async fn main() -> Result<(), ()> {
         .expect("Couldn't complete prompt.");
 
     if sp.is_some() {
-        sp.unwrap().stop_with_message("Finished Analyzing!".into());
+        sp.unwrap().stop_with_message("✅ Analysis complete!".into());
     }
 
     let tool_calls = &completion.choices[0].message.tool_calls;
     let (noob_msg, commit_msg) = if let Some(tool_calls) = tool_calls {
         if let Some(tool_call) = tool_calls.first() {
-            let advice: CommitAdvice = serde_json::from_str(&tool_call.function.arguments)
-                .expect("Couldn't parse model response.");
+            let advice: CommitAdvice = match serde_json::from_str(&tool_call.function.arguments) {
+                Ok(advice) => advice,
+                Err(e) => {
+                    error!("Failed to parse AI response: {}", e);
+                    error!("Raw response: {}", tool_call.function.arguments);
+                    std::process::exit(1);
+                }
+            };
             (advice.message, advice.commit.to_string())
         } else {
             error!("No tool calls in response");
@@ -703,15 +746,19 @@ async fn main() -> Result<(), ()> {
         std::process::exit(1);
     };
 
+    println!("\n{}", "═".repeat(60));
+    println!("📝 PROPOSED COMMIT MESSAGE");
+    println!("{}", "─".repeat(60));
+    println!("{}", commit_msg);
+    println!("{}", "─".repeat(60));
+    println!("💬 AI FEEDBACK: {}", noob_msg);
+    println!("{}", "═".repeat(60));
+    
     if cli.dry_run {
-        info!("----- COMMIT -----\n{}", commit_msg);
-        info!("----- MODEL MESSAGE -----\n{}", noob_msg);
         return Ok(());
-    } else {
-        info!("----- COMMIT -----\n{}", commit_msg);
-        info!("----- MODEL MESSAGE -----\n{}", noob_msg);
+    }
 
-        if !cli.force {
+    if !cli.force {
             let answer = Question::new("Do you want to continue? (Y/n)")
                 .yes_no()
                 .until_acceptable()
@@ -723,9 +770,8 @@ async fn main() -> Result<(), ()> {
                 error!("😅 Chickened out? That's okay, even I would be scared of my own commits sometimes.");
                 std::process::exit(1);
             }
-            info!("Committing Message...");
+            println!("\n🚀 Creating commit...");
         }
-    }
 
     let mut ps_commit = Command::new("git")
         .arg("commit")
@@ -747,26 +793,34 @@ async fn main() -> Result<(), ()> {
         .wait_with_output()
         .expect("There was an error when creating the commit.");
 
-    info!("{}", str::from_utf8(&commit_output.stdout).unwrap());
+    if commit_output.status.success() {
+        println!("✅ Commit created successfully!");
+    } else {
+        error!("Failed to create commit: {}", str::from_utf8(&commit_output.stderr).unwrap());
+        std::process::exit(1);
+    }
 
     // Push to remote if not disabled
     if !cli.no_push {
-        info!("Pushing to remote...");
+        print!("🌐 Pushing to remote...");
+        io::stdout().flush().unwrap();
         let push_output = Command::new("git")
             .arg("push")
             .output()
             .expect("Failed to push to remote");
 
         if push_output.status.success() {
-            info!("🚀 Pushed to remote! Your code is now bothering other developers.");
+            println!(" ✅ Successfully pushed!");
         } else {
+            println!(" ❌ Push failed");
             let stderr = str::from_utf8(&push_output.stderr).unwrap();
-            error!("😬 Push failed: {}\n💡 Maybe someone else pushed first? Try 'git pull' and run me again.", stderr);
+            error!("Error details: {}", stderr);
+            println!("💡 Tip: Try 'git pull' first, then run noob-commit again");
         }
     }
 
     if !cli.no_f_ads {
-        info!("One more noob commit by arthrod/noob-commit 🤡");
+        println!("\n🤡 One more noob commit by arthrod/noob-commit");
     }
 
     Ok(())
